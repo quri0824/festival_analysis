@@ -39,6 +39,9 @@ if page == "축제 현황":
     
     # 지표 구분에 따라 데이터를 열로 변환 (Pivot)
     df_pivot = raw_df.pivot_table(index=['축제명', '개최년도'], columns='구분명', values='지표값').reset_index()
+
+    # ⭐ [추가할 마법의 코드] 재조립된 데이터의 진짜 기둥(컬럼) 이름들을 화면에 띄워줘!
+    st.write("🔍 실제 만들어진 컬럼 이름들:", df_pivot.columns.tolist())
     
     # 2024년 데이터 필터링
     df_2024 = df_pivot[df_pivot['개최년도'] == 2024].copy()
