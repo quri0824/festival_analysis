@@ -51,13 +51,13 @@ if page == "축제 현황":
     
     # 메디안(중앙값) 계산
     x_median = df_2024['외부방문자 유입'].median() if '외부방문자 유입' in df_2024 else 50
-    y_median = df_2024['관광소비 지수'].median() if '관광소비 지수' in df_2024 else 50
+    y_median = df_2024['관광소비'].median() if '관광소비' in df_2024 else 50
 
     # 색상 분류 로직
     def get_color(row):
-        if row['외부방문자 유입'] >= x_median and row['관광소비 지수'] < y_median:
+        if row['외부방문자 유입'] >= x_median and row['관광소비'] < y_median:
             return '#D85A30' # 당일치기형 (주황)
-        elif row['외부방문자 유입'] >= x_median and row['관광소비 지수'] >= y_median:
+        elif row['외부방문자 유입'] >= x_median and row['관광소비'] >= y_median:
             return '#1D9E75' # 체류형 (초록)
         else:
             return '#378ADD' # 외부유입 낮음 (파란)
@@ -76,8 +76,8 @@ if page == "축제 현황":
         # '당일치기형' 개수 계산 (해당 연도 중앙값 기준)
         yr_data = df_pivot[df_pivot['개최년도'] == year]
         yr_x_med = yr_data['외부방문자 유입'].median()
-        yr_y_med = yr_data['관광소비 지수'].median()
-        count = len(yr_data[(yr_data['외부방문자 유입'] >= yr_x_med) & (yr_data['관광소비 지수'] < yr_y_med)])
+        yr_y_med = yr_data['관광소비'].median()
+        count = len(yr_data[(yr_data['외부방문자 유입'] >= yr_x_med) & (yr_data['관광소비'] < yr_y_med)])
         
         # 카드 디자인
         border_color = '#D85A30' if year == 2024 else '#cccccc'
@@ -94,7 +94,7 @@ if page == "축제 현황":
     ax_scatter = fig.add_subplot(gs[1, :])
     scatter = ax_scatter.scatter(
         df_2024['외부방문자 유입'], 
-        df_2024['관광소비 지수'], 
+        df_2024['관광소비'], 
         s=df_2024['축제지 집중률'] * 10, # 점 크기 조절
         c=df_2024['color'],
         alpha=0.7
@@ -104,7 +104,7 @@ if page == "축제 현황":
     ax_scatter.axvline(x_median, color='gray', linestyle='--', lw=1)
     ax_scatter.axhline(y_median, color='gray', linestyle='--', lw=1)
     ax_scatter.set_xlabel("외부방문자 유입", fontsize=12)
-    ax_scatter.set_ylabel("관광소비 지수", fontsize=12)
+    ax_scatter.set_ylabel("관광소비", fontsize=12)
     ax_scatter.set_title("2024년 축제기간 기준 · 점 크기 = 축제지 집중률", loc='left', pad=20, fontsize=10, color='gray')
     fig.suptitle("축제 방문객 유입-소비 패턴 분석", fontsize=16, fontweight='bold', y=0.95)
 
