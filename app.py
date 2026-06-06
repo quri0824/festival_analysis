@@ -6,7 +6,7 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 
 # --- [1] 한글 폰트 설정 (Windows/Mac 대응) ---
-plt.rcParams['font.family'] = 'Malgun Gothic' # Windows 기준
+plt.rcParams['font.family'] = 'NanumGothic' 
 plt.rcParams['axes.unicode_minus'] = False
 
 # --- [2] 시니어 개발자의 유틸리티 함수 (유연한 로드 알고리즘) ---
