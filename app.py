@@ -129,7 +129,7 @@ if page == "축제 현황":
     st.subheader("2. 업종별 소비액")
     
     sql_bar = """
-    SELECT * FROM "업종별 소비액" WHERE 연도 = 2024
+    SELECT * FROM 업종별소비액 WHERE 연도 = 2024
     """
     df_bar_raw = get_query_result(sql_bar)
     
