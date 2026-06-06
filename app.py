@@ -90,7 +90,7 @@ if page == "축제 현황":
         st.write("① 인사이트: ")
 
     # 차트 2: 업종별 소비액 세로 막대
-    query2 = 'SELECT * FROM "업종별 소비액" WHERE "연도" = 2024'
+    query2 = 'SELECT * FROM "업종별소비액" WHERE "연도" = 2024'
     df_spend = run_query(query2)
     # 컬럼명을 행으로 녹임(Melt)
     df_melt = df_spend.melt(id_vars=['연도'], var_name='업종', value_name='소비액')
@@ -100,7 +100,7 @@ if page == "축제 현황":
     fig2, ax2 = plt.subplots(figsize=(10, 6))
     bar_colors = ['#D85A30' if '숙박' in x else '#cccccc' for x in df_melt['업종']]
     sns.barplot(data=df_melt, x='업종', y='소비액', palette=bar_colors, ax=ax2)
-    ax2.set_title("업종별 소비액 구성 (2024년, 단위: 천원)", loc='left', fontsize=10)
+    ax2.set_title("업종별소비액 구성 (2024년, 단위: 천원)", loc='left', fontsize=10)
     
     st.subheader("차트 2. 업종별 소비액")
     st.pyplot(fig2)
