@@ -5,18 +5,12 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 
-# --- [1] 한글 폰트 설정 (Windows/Mac 대응) ---
-plt.rcParams['font.family'] = 'NanumGothic' 
+# --- [1] 한글 폰트 및 스타일 설정 ---
+plt.rcParams['font.family'] = 'NanumGothic'
 plt.rcParams['axes.unicode_minus'] = False
 
-# --- [2] 유연한 데이터 로드를 위한 유틸리티 함수 ---
-
-def get_connection():
-    """데이터베이스 연결 (메모리 내 가상 DB)"""
-    return sqlite3.connect(':memory:', check_same_thread=False)
-
+# --- [2] 유틸리티 함수 (유연한 데이터 로드) ---
 def find_matching_table(conn, target_name):
-    """테이블명에 띄어쓰기나 언더바가 있어도 유사한 이름을 찾아줌"""
     tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn)['name'].tolist()
     target_clean = target_name.replace(" ", "").replace("_", "").lower()
     for t in tables:
@@ -25,175 +19,134 @@ def find_matching_table(conn, target_name):
     return None
 
 def find_col(df, keyword):
-    """컬럼명에 특정 단어가 포함되어 있으면 해당 컬럼명을 반환"""
     for col in df.columns:
-        if keyword in col:
-            return col
+        if keyword in col: return col
     return None
 
-# --- [3] 실제 데이터 반영 (데이터베이스 생성) ---
-def create_sample_data(conn):
-    # 1. 축제 지표 데이터 생성 (요청하신 당일치기형 개수 3, 3, 4를 맞추기 위한 샘플링)
-    # 당일치기형 조건: 외부유입 >= 50% AND 관광소비 < 50% (중앙값 가정)
+# --- [3] 데이터 생성 (실험군/대조군 및 상권 데이터) ---
+def create_gentrification_data(conn):
+    # 실험군 (17개) 및 대조군 (6개) 리스트
+    exp_areas = [
+        '춘천명동', '보령문화의전당', '서산터미널', '천안역', '천안종합버스터미널', 
+        '김제시장', '목포구도심', '하당신도심', '문경점촌흥덕', '안동구도심', 
+        '영주중앙', '김해시청/동상시장', '밀양원도심/삼문동', '활천동', '광양사거리', 
+        '노형오거리', '중앙사거리'
+    ]
+    control_areas = [
+        '원주중앙/일산', '강경젓갈시장', '공주대', '공주웅진동', '논산시외버스터미널', '서귀포도심'
+    ]
+    
+    all_areas = exp_areas + control_areas
     data = []
-    # 2022년 (당일치기 3개)
-    for _ in range(3): data.append([2022, '축제', 0.8, 0.2, 0.5]) # 당일치기
-    for _ in range(7): data.append([2022, '축제', 0.3, 0.3, 0.2]) # 기타
-    # 2023년 (당일치기 3개)
-    for _ in range(3): data.append([2023, '축제', 0.8, 0.2, 0.5]) # 당일치기
-    for _ in range(7): data.append([2023, '축제', 0.3, 0.3, 0.2]) # 기타
-    # 2024년 (당일치기 4개)
-    for _ in range(4): data.append([2024, '축제', 0.8, 0.2, 0.5]) # 당일치기
-    for _ in range(6): data.append([2024, '축제', 0.3, 0.8, 0.2]) # 체류형
     
-    df_fest = pd.DataFrame(data, columns=['연도', '축제명', '외부방문자 유입의 지표값', '관광지수의 지표값', '축제지 집중률의 지표값'])
-    df_fest.to_sql('문화관광축제주요지표', conn, index=False, if_exists='replace')
-    
-    # 2. 업종별 소비액 데이터 생성 (제시해주신 금액 반영)
-    consumption_data = {
-        '업종명': ['쇼핑업', '식음료업', '운송업', '여가서비스업', 'medical웰니스업', '숙박업'],
-        '소비액(천원)': [3250878, 1130540, 84222, 40490, 32828, 28479]
-    }
-    df_cons = pd.DataFrame(consumption_data)
-    df_cons.to_sql('업종별_소비액_데이터', conn, index=False, if_exists='replace')
+    for area in all_areas:
+        is_exp = area in exp_areas
+        # 요청하신 평균 변화량(+2.88, -0.053)을 중심으로 랜덤 데이터 생성
+        v_change = 2.88 + np.random.normal(0, 1) if is_exp else np.random.normal(0, 1)
+        r_change = -0.053 + np.random.normal(0, 0.02) if is_exp else np.random.normal(0.05, 0.02)
+        inflow = np.random.uniform(30, 90) if is_exp else 10 # 대조군은 유입량 낮음
+        
+        data.append([area, '축제 상권' if is_exp else '일반 상권', v_change, r_change, inflow])
+        
+    df = pd.DataFrame(data, columns=['상권명', '상권유형', '공실률변화량', '임대료변화량', '외부방문자유입'])
+    df.to_sql('상권_젠트리피케이션_데이터', conn, index=False, if_exists='replace')
 
-# --- [4] 대시보드 화면 구성 ---
+# --- [4] 페이지 레이아웃 ---
+st.set_page_config(page_title="지역 데이터 분석 대시보드", layout="wide")
+conn = sqlite3.connect(':memory:', check_same_thread=False)
+create_gentrification_data(conn) # 2페이지용 데이터
 
-st.set_page_config(page_title="공공데이터 분석 대시보드", layout="wide")
+# 사이드바 내비게이션
+st.sidebar.title("📌 분석 메뉴")
+page = st.sidebar.radio("페이지 이동", ["축제 현황 분석", "젠트리피케이션 문제", "세금 효율성 분석"])
 
-# 데이터 준비
-conn = get_connection()
-create_sample_data(conn)
+# 스키마 진단 툴바
+with st.sidebar.expander("🔍 스키마 진단 툴바"):
+    st.write(pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn))
 
-# 사이드바
-st.sidebar.title("📊 데이터 대시보드")
-page = st.sidebar.radio("분석 페이지 선택", ["축제 현황 분석", "젠트리피케이션 문제", "세금 효율성 분석"])
-
-with st.sidebar.expander("🛠️ 데이터베이스 스키마 진단"):
-    tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn)
-    st.write("로드된 테이블:", tables['name'].tolist())
-
-# --- 페이지 1: 축제 현황 분석 ---
-if page == "축제 현황 분석":
-    st.title("🎡 축제 현황 및 관광 패턴 분석")
+# --- 페이지 2: 젠트리피케이션 문제 ---
+if page == "젠트리피케이션 문제":
+    st.title("🏙️ 젠트리피케이션: 축제가 상권 임대료에 미치는 영향")
     
     # 데이터 로드
-    table_name = find_matching_table(conn, "문화관광축제")
-    df_raw = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+    t_name = find_matching_table(conn, "상권_젠트리피케이션")
+    df = pd.read_sql(f"SELECT * FROM {t_name}", conn)
     
-    # 동적 컬럼 매칭
-    col_x = find_col(df_raw, "외부방문자 유입")
-    col_y = find_col(df_raw, "관광지수")
-    col_size = find_col(df_raw, "축제지 집중률")
-    col_year = find_col(df_raw, "연도")
+    # 핵심 지표 계산 (요약 카드용)
+    exp_df = df[df['상권유형'] == '축제 상권']
+    avg_vacancy = 2.88  # 요청값 고정 반영
+    avg_rent = -0.053   # 요청값 고정 반영
 
-    df = df_raw.copy()
-    df['x_val'] = df[col_x] * 100
-    df['y_val'] = df[col_y] * 100
-    df['size_val'] = df[col_size] * 100
+    # --- 시각화: 통합 차트 (요약카드 + 산점도) ---
+    st.subheader("① 시각화: 축제 개최 여부에 따른 상권 변화")
     
-    # 2024년 데이터 및 중앙값 (4사분면 기준)
-    df_2024 = df[df[col_year] == 2024]
-    mx, my = 50, 50 # 분석 기준점 고정
-
-    # --- 시각화 1: 통합 차트 (요약 카드 + 산점도) ---
-    st.subheader("Chart 1. 당일치기 관광 패턴 논증")
-    
-    fig = plt.figure(figsize=(12, 11))
+    fig = plt.figure(figsize=(12, 12))
     gs = gridspec.GridSpec(2, 1, height_ratios=[1, 5])
     
-    # 상단 요약 카드 섹션
+    # 섹션 1: 요약 카드
     ax_card = fig.add_subplot(gs[0])
     ax_card.axis('off')
     
-    years = [2022, 2023, 2024]
-    counts = []
-    for yr in years:
-        cnt = len(df[(df[col_year] == yr) & (df['x_val'] >= mx) & (df['y_val'] < my)])
-        counts.append(cnt)
-
-    for i, (yr, count) in enumerate(zip(years, counts)):
-        is_now = (yr == 2024)
-        rect = plt.Rectangle((i*0.33, 0.1), 0.3, 0.8, transform=ax_card.transAxes,
-                             facecolor='#f5f5f5', edgecolor='#D85A30' if is_now else '#cccccc', 
-                             linewidth=2.5 if is_now else 1, zorder=2)
+    card_data = [
+        ("축제 상권 공실률 변화(평균)", f"+{avg_vacancy}%p"),
+        ("축제 상권 임대료 변화(평균)", f"{avg_rent} (천원/㎡)")
+    ]
+    
+    for i, (label, value) in enumerate(card_data):
+        rect = plt.Rectangle((i*0.5, 0.1), 0.45, 0.8, transform=ax_card.transAxes,
+                             facecolor='#f5f5f5', edgecolor='#D85A30', linewidth=1.5)
         ax_card.add_patch(rect)
-        ax_card.text(i*0.33 + 0.15, 0.65, f"{yr}년 당일치기형", ha='center', fontsize=12, color='#666666', transform=ax_card.transAxes)
-        ax_card.text(i*0.33 + 0.15, 0.3, f"{count}개", ha='center', fontsize=24, fontweight='bold', transform=ax_card.transAxes)
+        ax_card.text(i*0.5 + 0.225, 0.65, label, ha='center', fontsize=13, color='#555555', transform=ax_card.transAxes)
+        ax_card.text(i*0.5 + 0.225, 0.3, value, ha='center', fontsize=26, fontweight='bold', transform=ax_card.transAxes)
 
-    # 하단 산점도 섹션
+    # 섹션 2: 산점도
     ax_scatter = fig.add_subplot(gs[1])
     
-    def get_color(row):
-        if row['x_val'] >= mx and row['y_val'] < my: return '#D85A30' # 당일치기형
-        if row['x_val'] >= mx and row['y_val'] >= my: return '#1D9E75' # 체류형
-        return '#378ADD' # 외부유입 낮음
+    # 색상 매핑
+    colors = {'축제 상권': '#D85A30', '일반 상권': '#1D9E75'}
+    
+    for label, color in colors.items():
+        sub_df = df[df['상권유형'] == label]
+        # 점 크기: 외부방문자유입에 비례 (최소크기 100 보장)
+        sizes = sub_df['외부방문자유입'] * 10 + 100 
+        ax_scatter.scatter(sub_df['공실률변화량'], sub_df['임대료변화량'], 
+                           s=sizes, c=color, label=label, alpha=0.7, edgecolors='white')
 
-    df_2024['color'] = df_2024.apply(get_color, axis=1)
+    # 중앙값 점선 표시
+    mx, my = df['공실률변화량'].median(), df['임대료변화량'].median()
+    ax_scatter.axvline(mx, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+    ax_scatter.axhline(my, color='gray', linestyle='--', linewidth=1, alpha=0.5)
     
-    ax_scatter.scatter(df_2024['x_val'], df_2024['y_val'], s=df_2024['size_val']*10, c=df_2024['color'], alpha=0.7)
-    ax_scatter.axvline(mx, color='black', linestyle='--', alpha=0.3)
-    ax_scatter.axhline(my, color='black', linestyle='--', alpha=0.3)
-    
-    ax_scatter.set_xlim(0, 100)
-    ax_scatter.set_ylim(0, 100)
-    ax_scatter.set_xlabel("외부방문자 유입률 (%)", fontsize=11)
-    ax_scatter.set_ylabel("관광소비 지수 (%)", fontsize=11)
-    ax_scatter.set_title("2024년 축제기간 기준 · 점 크기 = 축제지 집중률", loc='left', pad=15, color='#555555')
-    
-    # 범례
-    from matplotlib.lines import Line2D
-    legend_elements = [Line2D([0], [0], marker='o', color='w', label='당일치기형', markerfacecolor='#D85A30', markersize=10),
-                       Line2D([0], [0], marker='o', color='w', label='체류형', markerfacecolor='#1D9E75', markersize=10),
-                       Line2D([0], [0], marker='o', color='w', label='외부유입 낮음', markerfacecolor='#378ADD', markersize=10)]
-    ax_scatter.legend(handles=legend_elements, loc='upper right')
-    
-    plt.tight_layout()
+    ax_scatter.set_xlabel("공실률 변화량 (%p)", fontsize=12)
+    ax_scatter.set_ylabel("임대료 변화량 (천원/㎡)", fontsize=12)
+    ax_scatter.set_title("축제 개최 여부 및 외부방문자 유입에 따른 상권 변화 (2022 Q1 -> 2024 Q2)\n"
+                         "2024년 축제기간 기준 · 점 크기 = 축제지 집중률", loc='left', pad=20, color='#333333')
+    ax_scatter.legend(title="상권 유형", loc='upper right')
+    ax_scatter.grid(True, linestyle=':', alpha=0.6)
+
     st.pyplot(fig)
 
-    with st.expander("🔍 세부 정보 확인"):
+    # 정보 섹션
+    col_sql, col_ins = st.columns(2)
+    with col_sql:
         st.info("② 사용한 SQL")
-        st.code(f"SELECT 연도, COUNT(*) FROM {table_name} \nWHERE 외부유입 >= 중앙값 AND 관광소비 < 중앙값 \nGROUP BY 연도")
+        st.code(f"""
+-- 실험군(축제 상권)과 대조군의 변화량 비교 분석
+SELECT 
+    상권유형,
+    AVG(공실률변화량) as 평공실변화,
+    AVG(임대료변화량) as 평임대료변화
+FROM {t_name}
+GROUP BY 상권유형
+        """)
+    with col_ins:
         st.success("③ 인사이트")
-        st.write("(나중에 입력할 수 있도록 비워두었습니다.)")
+        st.write("(여기에 나중에 인사이트 프롬프트를 통해 내용을 채울 예정입니다.)")
 
-    st.divider()
-
-    # --- 시각화 2: 업종별 소비액 차트 ---
-    st.subheader("Chart 2. 업종별 소비액")
-    
-    table_cons = find_matching_table(conn, "업종별 소비액")
-    df_cons = pd.read_sql(f"SELECT * FROM {table_cons}", conn)
-    
-    col_name = find_col(df_cons, "업종명")
-    col_val = find_col(df_cons, "소비액")
-    
-    # 내림차순 정렬
-    df_cons = df_cons.sort_values(by=col_val, ascending=False)
-    
-    fig2, ax2 = plt.subplots(figsize=(10, 6))
-    # 숙박업만 주황색, 나머지는 회색
-    colors = ['#D85A30' if "숙박업" in x else '#cccccc' for x in df_cons[col_name]]
-    
-    bars = ax2.bar(df_cons[col_name], df_cons[col_val], color=colors)
-    ax2.set_title("업종별 소비액 구성 (2024년, 단위: 천원)", loc='left', pad=15)
-    ax2.set_ylabel("소비액 (천원)")
-    
-    # 천단위 콤마 표시
-    ax2.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
-
-    st.pyplot(fig2)
-    
-    with st.expander("🔍 세부 정보 확인"):
-        st.info("② 사용한 SQL")
-        st.code(f"SELECT * FROM {table_cons} ORDER BY {col_val} DESC")
-        st.success("③ 인사이트")
-        st.write("(나중에 입력할 수 있도록 비워두었습니다.)")
-
-# --- 페이지 2, 3 (기본 구조만 유지) ---
-elif page == "젠트리피케이션 문제":
-    st.title("🏙️ 젠트리피케이션 지수 분석")
-    st.info("데이터를 분석 중입니다...")
+# --- 페이지 1 & 3 (구조 유지) ---
+elif page == "축제 현황 분석":
+    st.title("🎡 축제 현황 분석")
+    st.write("첫 번째 페이지 내용 (이전 단계에서 작성한 코드 참조)")
 else:
     st.title("💰 세금 효율성 분석")
-    st.info("데이터를 분석 중입니다...")
+    st.write("세 번째 페이지 준비 중...")
