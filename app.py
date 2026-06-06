@@ -89,7 +89,7 @@ if page == "축제 현황":
         st.write("① 인사이트: ")
 
     # [차트 2 데이터] 업종별 소비액
-    query2 = "SELECT * FROM 업종별 소비액 WHERE 연도 = 2024"
+    query2 = "SELECT * FROM 업종별소비액 WHERE 연도 = 2024"
     df_spend = run_query(query2)
     # 컬럼명을 행으로 변경 (Melt)
     df_spend_melt = df_spend.melt(id_vars=['연도'], var_name='업종', value_name='소비액')
