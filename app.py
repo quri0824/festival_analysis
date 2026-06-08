@@ -312,35 +312,69 @@ def render_page1():
     st.divider()
 
     # ── 차트 2: 연도별 업종 소비 흐름 (txt 원본 유지) ──
-    st.subheader("📈 차트 2: 연도별 업종 소비 흐름 (꺾은선)")
-    year_col = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0]
-    other_cols = [c for c in df_consume.columns if c != year_col]
+    st.subheader("📈 차트 2: 연도별 업종 소비 흐름 (꺾은선)") 
 
-    df_melted_consume = df_consume.melt(
-        id_vars=[year_col], value_vars=other_cols,
-        var_name="소비업종", value_name="소비액"
-    )
-    df_melted_consume["소비업종"] = (
-        df_melted_consume["소비업종"].astype(str)
-        .str.replace(" 소비액", "")
-        .str.replace(" (천원)", "", regex=False)
-        .str.replace("(천원)", "", regex=False)
-        .str.strip()
-    )
-    df_melted_consume["소비액"] = pd.to_numeric(df_melted_consume["소비액"], errors='coerce').fillna(0)
+year_col = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0] 
+other_cols = [c for c in df_consume.columns if c != year_col] 
 
-    df_sub = df_melted_consume[[year_col, "소비업종", "소비액"]].copy()
-    df_sub.columns = ["_temp_year", "_temp_sector", "_temp_amount"]
-    df_trend = df_sub.groupby(["_temp_year", "_temp_sector"])["_temp_amount"].sum().reset_index()
-    df_trend.columns = [year_col, "소비업종", "소비액"]
+df_melted_consume = df_consume.melt( 
+    id_vars=[year_col], 
+    value_vars=other_cols, 
+    var_name="소비업종", 
+    value_name="소비액" 
+) 
 
-    fig2 = px.line(
-        df_trend, x=year_col, y="소비액", color="소비업종", markers=True,
-        title="연도별 업종 총 소비액 변동 추이",
-        labels={year_col: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"},
-        template="plotly_white"
+# 업종명 전처리
+df_melted_consume["소비업종"] = ( 
+    df_melted_consume["소비업종"].astype(str) 
+    .str.replace(" 소비액", "") 
+    .str.replace(" (천원)", "", regex=False) 
+    .str.replace("(천원)", "", regex=False) 
+    .str.strip() 
+) 
+
+# 결측치 처리 및 숫자형 변환
+df_melted_consume["소비액"] = pd.to_numeric(df_melted_consume["소비액"], errors='coerce').fillna(0) 
+
+df_sub = df_melted_consume[[year_col, "소비업종", "소비액"]].copy() 
+df_sub.columns = ["_temp_year", "_temp_sector", "_temp_amount"] 
+
+# 💡 수정된 부분: unstack과 stack을 사용해 누락된 '연도-업종' 조합을 모두 0으로 채워줌
+df_trend = (
+    df_sub.groupby(["_temp_year", "_temp_sector"])["_temp_amount"]
+    .sum()
+    .unstack(fill_value=0) # 비어있는 업종 데이터를 0으로 채움
+    .stack()
+    .reset_index(name="_temp_amount")
+)
+df_trend.columns = [year_col, "소비업종", "소비액"] 
+
+# 차트 생성
+fig2 = px.line( 
+    df_trend, 
+    x=year_col, 
+    y="소비액", 
+    color="소비업종", 
+    markers=True, 
+    title="연도별 업종 총 소비액 변동 추이", 
+    labels={year_col: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"}, 
+    template="plotly_white" 
+) 
+
+# 💡 수정된 부분: 끊긴 선 연결 및 범례(Legend) 설정 추가 (항목이 많을 경우 스크롤/배치 최적화)
+fig2.update_traces(connectgaps=True)
+fig2.update_layout(
+    legend=dict(
+        title="업종구분",
+        orientation="v",      # 세로 배열 (항목이 많으면 v, 적으면 h)
+        yanchor="top",
+        y=1,
+        xanchor="left",
+        x=1.02                # 차트 오른쪽에 범례 배치
     )
-    st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
+)
+
+st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
     st.info("""
     **💡 데이터 분석 결과 보고**
