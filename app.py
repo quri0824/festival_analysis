@@ -15,14 +15,16 @@ st.set_page_config(
 
 DB_FILE = "project1.db"
 
-# 예외 처리: 데이터베이스 파일 확인 (전체 요구사항 1번)
-if not os.path.exists(DB_FILE):
-    st.error("데이터베이스 파일(project1.db)을 찾을 수 없습니다. 파일 경로를 확인해주세요.")
-    st.stop()
+# [안정성 보완] DB 파일이 없어도 강제 종료(stop)하지 않고 데모 모드로 자동 진입합니다.
+db_exists = os.path.exists(DB_FILE)
+if not db_exists:
+    st.sidebar.warning("⚠️ project1.db 파일을 찾을 수 없어 내장된 데모 데이터로 앱을 실행합니다.")
 
 
 # 헬퍼 함수: DB 내 실제 존재하는 테이블 리스트 반환
 def get_db_tables():
+    if not db_exists:
+        return []
     conn = sqlite3.connect(DB_FILE)
     try:
         cursor = conn.cursor()
@@ -52,6 +54,9 @@ def find_matching_table(target_name):
 
 # 헬퍼 함수: 안전한 데이터 로딩 (Fallback 내장)
 def load_table_safely(table_name, fallback_data_func):
+    if not db_exists:
+        return fallback_data_func(), True
+        
     matched_table = find_matching_table(table_name)
     if not matched_table:
         return fallback_data_func(), True
@@ -130,7 +135,7 @@ def trunc_to_2_decimals(val):
         return 0.0
 
 
-# 지명 전처리 분석 파서 (기초지자체 및 축제명을 임대차 부동산의 광역 단위로 일관성 있게 매칭하기 위해 개선됨)
+# 지명 전처리 분석 파서 (기초지자체 및 축제명을 임대차 부동산의 광역 단위로 일관성 있게 매칭)
 def get_short_region(text):
     text_str = str(text).strip()
     
@@ -853,4 +858,71 @@ def render_page3():
         else:
             visitor_values.append(df_f_map["외부방문자"].mean())
             
-    df_s
+    df_sub["외부방문자"] = visitor_values
+    
+    df_sub["세금효율성_ROI"] = df_sub.apply(
+        lambda r: (r["외부방문자"] / (r[net_cost_col] / 1000000000)) if r[net_cost_col] > 0 else 0,
+        axis=1
+    )
+    
+    if not df_sub.empty and df_sub["세금효율성_ROI"].sum() > 0:
+        fig_roi = px.bar(
+            df_sub,
+            x=name_col,
+            y="세금효율성_ROI",
+            text_auto=".2f",
+            title="축제별 세금 투입 대비 외부인 관광객 유치 가치 (ROI 지수)",
+            labels={"세금효율성_ROI": "세금 10억 원당 외부인 유입 지수", name_col: "축제명"},
+            color="세금효율성_ROI",
+            color_continuous_scale="Reds",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig_roi, use_container_width=True, key="p3_tax_roi_chart_fixed")
+    else:
+        st.info("ℹ️ 현재 선택된 지자체 권역의 세금 집행 및 축제 관광유입 맵핑 지수 연산 결과가 존재하지 않거나 0입니다.")
+        
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("### 📉 세금 효율성 분석")
+        st.markdown("""
+        * **자원 레버리지**: 세금 효율성 ROI 지수가 높은 축제는 적은 예산 적자로 큰 외부 지출과 방문 편익을 달성한 우수 사례에 해당합니다.
+        * **예산 투입 분배**: 성과가 낮은 사업의 낭비 예산을 고효율 축제로 분배해 재무 건전성을 확보해야 합니다.
+        """)
+    with col2:
+        st.write("### ✈️ 지방 관광 대체 효과")
+        st.markdown("""
+        * **관광 대체**: 지방 축제 지원금은 단순 낭비가 아닌, 해외 관광 수요를 적극 흡수하여 국내 지역 경제로 선순환시키는 공공 편익을 발생시킵니다.
+        * **생활인구 유도**: 정주 인구가 감소하는 지방 소도시에 외부 유입을 유도하여, 정성적인 지역 소멸 예방 및 소상공인 매출 개선 효과를 견인합니다.
+        """)
+
+
+# ==========================================
+# 4. 메인 실행 함수 및 네비게이션
+# ==========================================
+def main():
+    st.sidebar.title("📌 대시보드 메뉴")
+    
+    with st.sidebar.expander("🛠️ 실시간 DB 스키마 진단 도구"):
+        st.write("실제 데이터베이스 내부 테이블 리스트:")
+        tables = get_db_tables()
+        if tables:
+            st.code("\n".join(tables), language="text")
+        else:
+            st.error("테이블을 조회할 수 없거나 project1.db 파일이 누락되었습니다.")
+            
+    page = st.sidebar.selectbox(
+        "원하는 분석 페이지를 선택하세요.",
+        ["1. 축제 현황 분석", "2. 젠트리피케이션 분석", "3. 세금 효율성 분석"]
+    )
+    
+    if page == "1. 축제 현황 분석":
+        render_page1()
+    elif page == "2. 젠트리피케이션 분석":
+        render_page2()
+    elif page == "3. 세금 효율성 분석":
+        render_page3()
+
+
+if __name__ == "__main__":
+    main()
