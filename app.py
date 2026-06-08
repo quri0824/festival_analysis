@@ -582,11 +582,11 @@ def render_page2():
     df_relation = df_relation.sort_values(by="점크기_방문자", ascending=False).copy()
     df_relation["차트라벨"] = df_relation[reg_col_vac].astype(str)
     
-    # 거리 계산을 위한 최대/최소값 및 범위 계산
-    x_min, x_max = df_relation["임대료변화율"].min(), df_relation["임대료변화율"].max()
-    y_min, y_max = df_relation["공실률변화량"].min(), df_relation["공실률변화량"].max()
-    x_span = (x_max - x_min) if (x_max - x_min) > 0 else 1.0
-    y_span = (y_max - y_min) if (y_max - y_min) > 0 else 1.0
+    # [오류 해결] 변수명 일치 (언더바 제거하여 xmin, xmax 형식으로 통일)
+    xmin, xmax = df_relation["임대료변화율"].min(), df_relation["임대료변화율"].max()
+    ymin, ymax = df_relation["공실률변화량"].min(), df_relation["공실률변화량"].max()
+    x_span = (xmax - xmin) if (xmax - xmin) > 0 else 1.0
+    y_span = (ymax - ymin) if (ymax - ymin) > 0 else 1.0
     
     # 겹침 방지 필터링: 활성화된 좌표 목록 기록
     active_coords = []
@@ -594,8 +594,8 @@ def render_page2():
     
     for idx, row in df_relation.iterrows():
         # 좌표 정규화 (0~1 범위)
-        rx = (row["임대료변화율"] - x_min) / x_span
-        ry = (row["공실률변화량"] - y_min) / y_span
+        rx = (row["임대료변화율"] - xmin) / x_span
+        ry = (row["공실률변화량"] - ymin) / y_span
         
         is_overlapping = False
         for ax, ay in active_coords:
