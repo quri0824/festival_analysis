@@ -183,7 +183,6 @@ def get_fallback_cost():
         "순원가": [950000000, 730000000, 1220000000, 1500000000, 750000000]
     })
 
-# 💡 DB에 매핑테이블이 없을 경우 사용할 예비 가상 매핑테이블
 def get_fallback_mapping():
     return pd.DataFrame({
         "상권명": ["춘천 명동", "천안 신부동", "김제 전통시장", "해운대 상권", "상봉역 상권", "수원역 상권", "부평역 상권", "대구 동성로"],
@@ -366,15 +365,15 @@ def render_page1():
 
 
 # ==========================================
-# 페이지 2: 젠트리피케이션 (DB 매핑테이블 활용 적용)
+# 페이지 2: 젠트리피케이션 (매핑테이블 기반 모든 상권 출력)
 # ==========================================
 def render_page2():
     st.title("🏢 젠트리피케이션과 지역 축제 상관성 분석")
     st.markdown("축제 상권(실험군)과 일반 상권(대조군)의 격차를 정적 분산 구조와 시계열 트렌드로 비교 분석합니다.")
 
-    # 각 테이블 로드
-    df_vac, is_v_mock = load_table_safely("임대동향 상권별 공실률 소규모 상가", get_fallback_property_vacancy)
-    df_rent, is_r_mock = load_table_safely("임대동향 상권별 임대료 소규모 상가", get_fallback_property_rent)
+    # 테이블 로딩
+    df_vac, is_v_mock = load_table_safely("임대동향 지역별 공실률 소규모 상가", get_fallback_property_vacancy)
+    df_rent, is_r_mock = load_table_safely("임대동향 지역별 임대료 소규모 상가", get_fallback_property_rent)
     df_fest, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
     df_cost, is_c_mock = load_table_safely("행사원가회계정보", get_fallback_cost)
     df_mapping, is_m_mock = load_table_safely("매핑테이블", get_fallback_mapping)
@@ -382,18 +381,22 @@ def render_page2():
     if any([is_v_mock, is_r_mock, is_f_mock, is_c_mock, is_m_mock]):
         st.sidebar.warning("⚠️ 로컬 DB 일부 누락으로 시뮬레이션 데이터 또는 매핑이 대체 사용되었습니다.")
 
-    # 💡 1. DB 기반 매핑 딕셔너리 생성
+    # 💡 1. DB의 매핑테이블 기반 컬럼 탐색 및 정식 딕셔너리 생성
     col_m_sangwon = find_col(df_mapping.columns, ["상권명", "상권"]) or "상권명"
     col_m_group = find_col(df_mapping.columns, ["상권구분", "실험군", "대조군", "구분"]) or "상권구분"
     col_m_jachi = find_col(df_mapping.columns, ["자치단체", "지자체", "연동"]) or "연동자치단체명"
     col_m_fest = find_col(df_mapping.columns, ["매핑축제", "축제명"]) or "매핑축제명"
 
-    # 상권명 -> 실험군/대조군 & 지자체 & 축제명 매핑 딕셔너리 생성
+    # 요청 필주 조건: 상권명 기준 3대 딕셔너리 빌드
     sangwon_to_group = dict(zip(df_mapping[col_m_sangwon], df_mapping[col_m_group]))
     sangwon_to_jachi = dict(zip(df_mapping[col_m_sangwon], df_mapping[col_m_jachi]))
     sangwon_to_fest = dict(zip(df_mapping[col_m_sangwon], df_mapping[col_m_fest]))
 
-    # 축제 데이터에서 외부방문자 유입지표 딕셔너리 추출
+    # 연동지자체 전방 2글자(시도)를 추출하여 시도별 실험군/대조군 매핑 생성 (차트3 분할 분석용)
+    df_mapping["_시도키"] = df_mapping[col_m_jachi].astype(str).str[:2]
+    sido_to_group = dict(zip(df_mapping["_시도키"], df_mapping[col_m_group]))
+
+    # 축제 데이터에서 외부방문자 유입지표 딕셔너리 생성
     fest_name_col = find_col(df_fest.columns, ["축제명", "행사명"]) or df_fest.columns[0]
     foreign_col = find_col(df_fest.columns, ["외부방문자_유입지표", "외부방문자 유입", "외부방문자"]) or detect_numeric_col(df_fest)
     
@@ -401,10 +404,10 @@ def render_page2():
     df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0)
     fest_to_visitor = dict(zip(df_fest_clean[fest_name_col], df_fest_clean[foreign_col]))
 
-    # 상권명 -> 외부방문자 유입값 매핑 (매핑축제명 경유)
+    # 매핑축제명을 경유하여 상권명 -> 외부방문자 유입지수 변환 완비
     sangwon_to_visitor = {sw: fest_to_visitor.get(fest, 0) for sw, fest in sangwon_to_fest.items()}
 
-    # 예산 데이터에서 지자체별 총비용 딕셔너리 추출
+    # 예산 회계 데이터에서 지자체 그룹별 총비용 취합
     cost_org = find_col(df_cost.columns, ["자치단체", "지자체"]) or df_cost.columns[0]
     cost_val = find_col(df_cost.columns, ["총비용"]) or df_cost.select_dtypes(include=['number']).columns[-1]
     
@@ -412,7 +415,7 @@ def render_page2():
     df_cost_clean[cost_val] = pd.to_numeric(df_cost_clean[cost_val], errors='coerce').fillna(0)
     jachi_to_budget = df_cost_clean.groupby(cost_org)[cost_val].sum().to_dict()
 
-    # 💡 2. 임대동향 데이터(df_prop) 정리 및 매핑테이블 적용
+    # 💡 2. 부동산 임대동향 증감분 계산 (시도 레벨 데이터의 정형화 연동 준비)
     quarter_cols_vac = [c for c in df_vac.columns if any(q in str(c) for q in ["Q", "q", "1/4", "2/4", "3/4", "4/4", "_", " "])]
     quarter_cols_vac = sorted(quarter_cols_vac)
     if len(quarter_cols_vac) >= 2:
@@ -439,25 +442,27 @@ def render_page2():
         df_rent_calc[[reg_col_rent, "임대료변화율"]],
         left_on=reg_col_vac, right_on=reg_col_rent
     )
-    
-    # 조인된 데이터프레임에 매핑 딕셔너리 직접 투입
-    # 💡 [핵심 추가] 매핑테이블의 '연동자치단체명'에서 시도(앞 2글자)를 뽑아 '상권명'으로 바꿔주는 딕셔너리 생성
-    df_mapping["_sido_key"] = df_mapping[col_m_jachi].astype(str).str[:2]
-    sido_to_sangwon = dict(zip(df_mapping["_sido_key"], df_mapping[col_m_sangwon]))
 
-    df_relation = df_prop.copy()
+    # 지자체 시도 명칭을 2글자로 정규화하여 가속 매핑 딕셔너리 생성
+    sido_to_vacancy_change = {str(k)[:2]: v for k, v in zip(df_prop[reg_col_vac], df_prop["공실률변화량"])}
+    sido_to_rent_change = {str(k)[:2]: v for k, v in zip(df_prop[reg_col_rent], df_prop["임대료변화율"])}
+
+    # 💡 3. 핵심 변경: 매핑테이블의 고유 모든 '상권명'을 축으로 베이스 프레임 생성 (누락 차단)
+    all_sangwons = df_mapping[col_m_sangwon].dropna().unique()
+    df_relation = pd.DataFrame({"상권명": all_sangwons})
     
-    # 💡 [핵심 수정] 원본 데이터의 '시도'를 딕셔너리에 넣어 진짜 '상권명'으로 텍스트를 덮어씌움
-    df_relation["원본_시도"] = df_relation[reg_col_vac].astype(str).str[:2]
-    df_relation["상권명"] = df_relation["원본_시도"].map(sido_to_sangwon).fillna(df_relation[reg_col_vac])
-    
-    # 이제 완벽하게 변환된 "상권명" 기준으로 실험군/대조군 매핑 및 차트 출력
+    # 3대 지정 딕셔너리로 속성 할당
     df_relation["상권구분"] = df_relation["상권명"].map(sangwon_to_group).fillna("일반 상권 (대조군)")
-    df_relation["외부방문자유입"] = df_relation["상권명"].map(sangwon_to_visitor).fillna(0)
     df_relation["연동자치단체명"] = df_relation["상권명"].map(sangwon_to_jachi)
+    df_relation["외부방문자유입"] = df_relation["상권명"].map(sangwon_to_visitor).fillna(0)
     df_relation["예산총액(원)"] = df_relation["연동자치단체명"].map(jachi_to_budget).fillna(1e6)
 
-    # 3D 차트 시각화를 위한 전처리
+    # 연동자치단체명 전방 2글자(시도키)를 이용하여 광역 공실률/임대료 매핑 결합
+    df_relation["_시도키"] = df_relation["연동자치단체명"].astype(str).str[:2]
+    df_relation["공실률변화량"] = df_relation["_시도키"].map(sido_to_vacancy_change).fillna(0)
+    df_relation["임대료변화율"] = df_relation["_시도키"].map(sido_to_rent_change).fillna(0)
+
+    # 버블 차트 및 3D 산점도 점 크기 전처리 수치화
     df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 1000
     df_relation.loc[df_relation["점크기_방문자"] < 5, "점크기_방문자"] = 8
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
@@ -469,7 +474,7 @@ def render_page2():
 
     fig1 = px.scatter(
         df_relation, x="임대료변화율", y="공실률변화량",
-        size="점크기_방문자", color="상권구분", text="상권명",
+        size="점크기_방문자", color="상권구분", text="상권명",  # 💡 모든 독립된 상권명이 점으로 출력됨
         color_discrete_map={"축제 상권 (실험군)": "#FF4B4B", "일반 상권 (대조군)": "#1F77B4"},
         labels={
             "임대료변화율": f"임대료 변화율 (% / {first_q} ➔ {last_q})",
@@ -487,7 +492,7 @@ def render_page2():
 
     fig2 = px.scatter_3d(
         df_relation, x="임대료변화율", y="공실률변화량", z="예산(백만원)",
-        size="점크기_예산", color="상권구분", text="상권명", 
+        size="점크기_예산", color="상권구분", text="상권명",  # 💡 3D 그래프 마커 레이블도 상권명 일치 완료
         color_discrete_map={"축제 상권 (실험군)": "#FF4B4B", "일반 상권 (대조군)": "#1F77B4"},
         labels={
             "임대료변화율": "임대료 변화율 (%)",
@@ -506,12 +511,13 @@ def render_page2():
     m_vac_full, r_v_col = melt_quarters(df_vac, "공실률")
     m_rent_full, r_r_col = melt_quarters(df_rent, "임대료")
 
-    m_vac_full["상권명"] = m_vac_full[r_v_col]
-    m_rent_full["상권명"] = m_rent_full[r_r_col]
+    # 시계열 광역 행정구역명을 2글자 단어로 통정 변환
+    m_vac_full["_시도키"] = m_vac_full[r_v_col].astype(str).str[:2]
+    m_rent_full["_시도키"] = m_rent_full[r_r_col].astype(str).str[:2]
 
-    # 매핑테이블 딕셔너리로 시계열 데이터 상권구분 할당
-    m_vac_full["상권구분"] = m_vac_full["상권명"].map(sangwon_to_group).fillna("일반 상권 (대조군)")
-    m_rent_full["상권구분"] = m_rent_full["상권명"].map(sangwon_to_group).fillna("일반 상권 (대조군)")
+    # 매핑테이블 기반 시도 매핑으로 그룹 분할 결측 및 누락 완벽 해결 (실험군 대조군 고르게 표시됨)
+    m_vac_full["상권구분"] = m_vac_full["_시도키"].map(sido_to_group).fillna("일반 상권 (대조군)")
+    m_rent_full["상권구분"] = m_rent_full["_시도키"].map(sido_to_group).fillna("일반 상권 (대조군)")
 
     m_vac_full["공실률"] = pd.to_numeric(m_vac_full["공실률"], errors='coerce').fillna(0)
     m_rent_full["임대료"] = pd.to_numeric(m_rent_full["임대료"], errors='coerce').fillna(0)
@@ -554,7 +560,7 @@ def render_page2():
 
 
 # ==========================================
-# 페이지 3: 세금 효율성 (축제명 직접 조인으로 고도화)
+# 페이지 3: 세금 효율성
 # ==========================================
 def render_page3():
     st.title("💸 정부 예산 세금 ROI 가치 진단")
@@ -598,20 +604,17 @@ def render_page3():
         st.plotly_chart(fig, use_container_width=True, key="p3_budget_bar")
 
     st.subheader("💡 세금 1천만 원당 외부인 관광 유입 유치 지수 (Tax ROI Index)")
-    st.write("순정 세금 투입액(순원가) 대비 실제로 얼마나 유치 효과를 냈는지 환산하여 공공 가치 가성비를 종합 진단합니다.")
+    st.write("순정 세금 투입액(순원가) 대비 실제로 얼마나 유치 효과를 냈인지 환산하여 공공 가치 가성비를 종합 진단합니다.")
 
-    # 💡 꼼수 로직 제거: 축제 테이블과 예산 테이블의 공통 분모인 '축제명'으로 다이렉트 매칭
     fest_name_col = find_col(df_fest.columns, ["축제명", "행사명"]) or df_fest.columns[0]
     foreign_col = find_col(df_fest.columns, ["외부방문자_유입지표", "외부방문자 유입", "외부방문자"]) or detect_numeric_col(df_fest)
     
-    # 띄어쓰기 차이로 인한 매칭 오류 방지 (정규화)
     df_sub["매칭용_축제명"] = df_sub[name_col].astype(str).str.replace(" ", "")
     
     df_fest_clean = df_fest.copy()
     df_fest_clean["매칭용_축제명"] = df_fest_clean[fest_name_col].astype(str).str.replace(" ", "")
     df_fest_clean["외부방문자"] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0)
 
-    # 매칭용_축제명 기준으로 결합
     df_roi = pd.merge(df_sub, df_fest_clean[["매칭용_축제명", "외부방문자"]], on="매칭용_축제명", how="left")
     
     df_roi["외부방문자"] = df_roi["외부방문자"].fillna(0)
