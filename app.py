@@ -441,9 +441,17 @@ def render_page2():
     )
     
     # 조인된 데이터프레임에 매핑 딕셔너리 직접 투입
+    # 💡 [핵심 추가] 매핑테이블의 '연동자치단체명'에서 시도(앞 2글자)를 뽑아 '상권명'으로 바꿔주는 딕셔너리 생성
+    df_mapping["_sido_key"] = df_mapping[col_m_jachi].astype(str).str[:2]
+    sido_to_sangwon = dict(zip(df_mapping["_sido_key"], df_mapping[col_m_sangwon]))
+
     df_relation = df_prop.copy()
-    df_relation["상권명"] = df_relation[reg_col_vac]
     
+    # 💡 [핵심 수정] 원본 데이터의 '시도'를 딕셔너리에 넣어 진짜 '상권명'으로 텍스트를 덮어씌움
+    df_relation["원본_시도"] = df_relation[reg_col_vac].astype(str).str[:2]
+    df_relation["상권명"] = df_relation["원본_시도"].map(sido_to_sangwon).fillna(df_relation[reg_col_vac])
+    
+    # 이제 완벽하게 변환된 "상권명" 기준으로 실험군/대조군 매핑 및 차트 출력
     df_relation["상권구분"] = df_relation["상권명"].map(sangwon_to_group).fillna("일반 상권 (대조군)")
     df_relation["외부방문자유입"] = df_relation["상권명"].map(sangwon_to_visitor).fillna(0)
     df_relation["연동자치단체명"] = df_relation["상권명"].map(sangwon_to_jachi)
