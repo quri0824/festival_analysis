@@ -312,69 +312,60 @@ def render_page1():
     st.divider()
 
     # ── 차트 2: 연도별 업종 소비 흐름 (txt 원본 유지) ──
-    st.subheader("📈 차트 2: 연도별 업종 소비 흐름 (꺾은선)") 
+    st.subheader("📈 차트 2: 연도별 업종 소비 흐름 (꺾은선)")
 
-    year_col = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0] 
-    other_cols = [c for c in df_consume.columns if c != year_col] 
+    year_col = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0]
 
-    df_melted_consume = df_consume.melt( 
-        id_vars=[year_col], 
-        value_vars=other_cols, 
-        var_name="소비업종", 
-        value_name="소비액" 
-    ) 
+    # 연도 컬럼과 완전히 동일한 컬럼만 제외 (나머지 전부 소비업종으로 처리)
+    other_cols = [c for c in df_consume.columns if c != year_col]
 
-    # 업종명 전처리
-    df_melted_consume["소비업종"] = ( 
-        df_melted_consume["소비업종"].astype(str) 
-        .str.replace(" 소비액", "") 
-        .str.replace(" (천원)", "", regex=False) 
-        .str.replace("(천원)", "", regex=False) 
-        .str.strip() 
-    ) 
-
-    # 결측치 처리 및 숫자형 변환
-    df_melted_consume["소비액"] = pd.to_numeric(df_melted_consume["소비액"], errors='coerce').fillna(0) 
-
-    df_sub = df_melted_consume[[year_col, "소비업종", "소비액"]].copy() 
-    df_sub.columns = ["_temp_year", "_temp_sector", "_temp_amount"] 
-
-    # 💡 수정된 부분: unstack과 stack을 사용해 누락된 '연도-업종' 조합을 모두 0으로 채워줌
-    df_trend = (
-        df_sub.groupby(["_temp_year", "_temp_sector"])["_temp_amount"]
-        .sum()
-        .unstack(fill_value=0) # 비어있는 업종 데이터를 0으로 채움
-        .stack()
-        .reset_index(name="_temp_amount")
-    )
-    df_trend.columns = [year_col, "소비업종", "소비액"] 
-
-    # 차트 생성
-    fig2 = px.line( 
-        df_trend, 
-        x=year_col, 
-        y="소비액", 
-        color="소비업종", 
-        markers=True, 
-        title="연도별 업종 총 소비액 변동 추이", 
-        labels={year_col: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"}, 
-        template="plotly_white" 
-    ) 
-
-    # 💡 수정된 부분: 끊긴 선 연결 및 범례(Legend) 설정 추가 (항목이 많을 경우 스크롤/배치 최적화)
-    fig2.update_traces(connectgaps=True)
-    fig2.update_layout(
-        legend=dict(
-            title="업종구분",
-            orientation="v",      # 세로 배열 (항목이 많으면 v, 적으면 h)
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02                # 차트 오른쪽에 범례 배치
+    # 혹시 other_cols가 비어있으면 경고 표시
+    if not other_cols:
+        st.warning("소비 업종 컬럼을 찾지 못했습니다.")
+    else:
+        df_melted_consume = df_consume.melt(
+            id_vars=[year_col],
+            value_vars=other_cols,  # 전체 업종 컬럼 명시적으로 전달
+            var_name="소비업종",
+            value_name="소비액"
         )
-    )
 
-    st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
+        df_melted_consume["소비업종"] = (
+            df_melted_consume["소비업종"].astype(str)
+            .str.replace(" 소비액", "", regex=False)
+            .str.replace(" (천원)", "", regex=False)
+            .str.replace("(천원)", "", regex=False)
+            .str.strip()
+        )
+
+        df_melted_consume["소비액"] = pd.to_numeric(
+            df_melted_consume["소비액"], errors='coerce'
+        ).fillna(0)
+
+        # 업종별 누락 없이 전체 집계
+        df_sub = df_melted_consume[[year_col, "소비업종", "소비액"]].copy()
+        df_sub.columns = ["_temp_year", "_temp_sector", "_temp_amount"]
+        df_trend = df_sub.groupby(
+            ["_temp_year", "_temp_sector"], as_index=False
+        )["_temp_amount"].sum()
+        df_trend.columns = [year_col, "소비업종", "소비액"]
+
+        # 실제 포함된 업종 수 확인 (디버깅용, 배포 시 삭제 가능)
+        st.caption(f"포함된 업종 수: {df_trend['소비업종'].nunique()}개 — {list(df_trend['소비업종'].unique())}")
+
+        fig2 = px.line(
+            df_trend,
+            x=year_col,
+            y="소비액",
+            color="소비업종",
+            markers=True,
+            title="연도별 업종 총 소비액 변동 추이",
+            labels={year_col: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"},
+            color_discrete_sequence=px.colors.qualitative.Safe,  # 업종 수가 많아도 색상 구분 명확
+            template="plotly_white"
+        )
+        fig2.update_traces(line=dict(width=2))  # 선 굵기 통일
+        st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
 
     st.info("""
