@@ -117,6 +117,19 @@ def detect_numeric_col(df):
     return num_cols[0] if num_cols else None
 
 
+# 헬퍼 함수: 소수 셋째자리에서 버림(소수 둘째자리까지 유지) 처리
+def trunc_to_2_decimals(val):
+    if pd.isna(val):
+        return 0.0
+    try:
+        val_float = float(val)
+        sign = 1 if val_float >= 0 else -1
+        abs_val = abs(val_float)
+        return sign * (int(abs_val * 100) / 100.0)
+    except Exception:
+        return 0.0
+
+
 # 지명 전처리 분석 파서 (기초지자체 및 축제명을 임대차 부동산의 광역 단위로 일관성 있게 매칭하기 위해 개선됨)
 def get_short_region(text):
     text_str = str(text).strip()
@@ -460,7 +473,7 @@ def render_page1():
 
 
 # ==========================================
-# 2. 페이지 2: 젠트리피케이션 분석 (지방소멸 설문 유지 및 깔끔한 최적화)
+# 2. 페이지 2: 젠트리피케이션 분석 (공실률, 임대료 및 외부방문자 유입 수식 반영)
 # ==========================================
 def render_page2():
     st.title("🏢 젠트리피케이션과 지역 축제 상관성 분석")
@@ -494,12 +507,17 @@ def render_page2():
     df_vac_calc = df_vac[[reg_col_vac, first_q, last_q]].copy()
     df_vac_calc["공실률_first"] = pd.to_numeric(df_vac_calc[first_q], errors='coerce').fillna(0)
     df_vac_calc["공실률_last"] = pd.to_numeric(df_vac_calc[last_q], errors='coerce').fillna(0)
-    df_vac_calc["공실률변화량"] = df_vac_calc["공실률_last"] - df_vac_calc["공실률_first"]
+    
+    # [수식 반영] 공실률 변화량 구한 후 소수점 셋째자리 버림 처리
+    df_vac_calc["공실률변화량"] = (df_vac_calc["공실률_last"] - df_vac_calc["공실률_first"]).apply(trunc_to_2_decimals)
     
     df_rent_calc = df_rent[[reg_col_rent, first_q, last_q]].copy()
     df_rent_calc["임대료_first"] = pd.to_numeric(df_rent_calc[first_q], errors='coerce').fillna(1e-5)
     df_rent_calc["임대료_last"] = pd.to_numeric(df_rent_calc[last_q], errors='coerce').fillna(0)
-    df_rent_calc["임대료변화율"] = ((df_rent_calc["임대료_last"] - df_rent_calc["임대료_first"]) / df_rent_calc["임대료_first"]) * 100
+    
+    # [수식 반영] 임대료 변화율 구한 후 소수점 셋째자리 버림 처리
+    raw_rent_change = ((df_rent_calc["임대료_last"] - df_rent_calc["임대료_first"]) / df_rent_calc["임대료_first"]) * 100
+    df_rent_calc["임대료변화율"] = raw_rent_change.apply(trunc_to_2_decimals)
     
     df_prop = pd.merge(
         df_vac_calc[[reg_col_vac, "공실률변화량"]], 
@@ -513,7 +531,9 @@ def render_page2():
     foreign_col = find_col(df_fest.columns, ["외부방문자 유입", "외부방문자"]) or detect_numeric_col(df_fest)
     
     df_fest_clean = df_fest.copy()
-    df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0)
+    
+    # [수식 반영] 외부방문자 유입 지표에 일괄적으로 100을 곱함
+    df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0) * 100
     
     df_f_sub = df_fest_clean[[fest_reg, foreign_col]].copy()
     df_f_sub.columns = ["_temp_reg", "_temp_foreign"]
@@ -546,7 +566,8 @@ def render_page2():
         lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)"
     )
     
-    df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 1000
+    # 100이 곱해진 지표이므로 버블 크기를 이에 맞춰 조정
+    df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 10
     df_relation.loc[df_relation["점크기_방문자"] < 5, "점크기_방문자"] = 8
     
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
@@ -574,7 +595,7 @@ def render_page2():
         hover_data={
             "임대료변화율": ":.2f%",
             "공실률변화량": ":.2fp.p.",
-            "외부방문자유입": ":.4f",
+            "외부방문자유입": ":.2f",
             "점크기_방문자": False
         },
         color_discrete_map={
@@ -584,6 +605,7 @@ def render_page2():
         labels={
             "임대료변화율": f"임대료 변화율 (% / {first_q} ➔ {last_q})",
             "공실률변화량": f"공실률 변화량 (p.p. / {first_q} ➔ {last_q})",
+            "외부방문자유입": "외부방문자 유입 (%)",
             "상권구분": "상권 유형"
         },
         template="plotly_white"
@@ -831,71 +853,4 @@ def render_page3():
         else:
             visitor_values.append(df_f_map["외부방문자"].mean())
             
-    df_sub["외부방문자"] = visitor_values
-    
-    df_sub["세금효율성_ROI"] = df_sub.apply(
-        lambda r: (r["외부방문자"] / (r[net_cost_col] / 1000000000)) if r[net_cost_col] > 0 else 0,
-        axis=1
-    )
-    
-    if not df_sub.empty and df_sub["세금효율성_ROI"].sum() > 0:
-        fig_roi = px.bar(
-            df_sub,
-            x=name_col,
-            y="세금효율성_ROI",
-            text_auto=".2f",
-            title="축제별 세금 투입 대비 외부인 관광객 유치 가치 (ROI 지수)",
-            labels={"세금효율성_ROI": "세금 10억 원당 외부인 유입 지수", name_col: "축제명"},
-            color="세금효율성_ROI",
-            color_continuous_scale="Reds",
-            template="plotly_white"
-        )
-        st.plotly_chart(fig_roi, use_container_width=True, key="p3_tax_roi_chart_fixed")
-    else:
-        st.info("ℹ️ 현재 선택된 지자체 권역의 세금 집행 및 축제 관광유입 맵핑 지수 연산 결과가 존재하지 않거나 0입니다.")
-        
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("### 📉 세금 효율성 분석")
-        st.markdown("""
-        * **자원 레버리지**: 세금 효율성 ROI 지수가 높은 축제는 적은 예산 적자로 큰 외부 지출과 방문 편익을 달성한 우수 사례에 해당합니다.
-        * **예산 투입 분배**: 성과가 낮은 사업의 낭비 예산을 고효율 축제로 분배해 재무 건전성을 확보해야 합니다.
-        """)
-    with col2:
-        st.write("### ✈️ 지방 관광 대체 효과")
-        st.markdown("""
-        * **관광 대체**: 지방 축제 지원금은 단순 낭비가 아닌, 해외 관광 수요를 적극 흡수하여 국내 지역 경제로 선순환시키는 공공 편익을 발생시킵니다.
-        * **생활인구 유도**: 정주 인구가 감소하는 지방 소도시에 외부 유입을 유도하여, 정성적인 지역 소멸 예방 및 소상공인 매출 개선 효과를 견인합니다.
-        """)
-
-
-# ==========================================
-# 4. 메인 실행 함수 및 네비게이션
-# ==========================================
-def main():
-    st.sidebar.title("📌 대시보드 메뉴")
-    
-    with st.sidebar.expander("🛠️ 실시간 DB 스키마 진단 도구"):
-        st.write("실제 데이터베이스 내부 테이블 리스트:")
-        tables = get_db_tables()
-        if tables:
-            st.code("\n".join(tables), language="text")
-        else:
-            st.error("테이블을 조회할 수 없거나 project1.db 파일이 누락되었습니다.")
-            
-    page = st.sidebar.selectbox(
-        "원하는 분석 페이지를 선택하세요.",
-        ["1. 축제 현황 분석", "2. 젠트리피케이션 분석", "3. 세금 효율성 분석"]
-    )
-    
-    if page == "1. 축제 현황 분석":
-        render_page1()
-    elif page == "2. 젠트리피케이션 분석":
-        render_page2()
-    elif page == "3. 세금 효율성 분석":
-        render_page3()
-
-
-if __name__ == "__main__":
-    main()
+    df_s
