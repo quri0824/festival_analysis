@@ -376,6 +376,8 @@ fig2.update_layout(
 
 st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
+if condition:
+    do_something()
     st.info("""
     **💡 데이터 분석 결과 보고**
 
