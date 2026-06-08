@@ -478,7 +478,7 @@ def render_page1():
 
 
 # ==========================================
-# 2. 페이지 2: 젠트리피케이션 분석 (공실률, 임대료 및 외부방문자 유입 수식 반영)
+# 2. 페이지 2: 젠트리피케이션 분석 (상권별 단일 대표값 및 차트 가독성 극대화)
 # ==========================================
 def render_page2():
     st.title("🏢 젠트리피케이션과 지역 축제 상관성 분석")
@@ -571,61 +571,79 @@ def render_page2():
         lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)"
     )
     
-    # 100이 곱해진 지표이므로 버블 크기를 이에 맞춰 조정
-    df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 10
-    df_relation.loc[df_relation["점크기_방문자"] < 5, "점크기_방문자"] = 8
-    
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
     df_relation["점크기_예산"] = df_relation["예산(백만원)"] / 100
     df_relation.loc[df_relation["점크기_예산"] < 5, "점크기_예산"] = 8
     
     # ------------------------------------------
-    # 차트 1번: 임대료 변화율 x 공실률 변화 산점도 (글자 겹침 해결 및 정돈)
+    # 차트 1번: 상권별로 하나의 대표 데이터 평균값만 노출 (가독성 극대화)
     # ------------------------------------------
-    st.subheader("📊 차트 1: 임대료 변화율 × 공실률 변화 사분면 매트릭스")
-    st.markdown("X축(임대료 변화율)과 Y축(공실률 변화량)에 따른 각 권역별 분포를 나타냅니다. 마우스를 올리면 각 지자체의 상세 수치정보가 제공됩니다.")
+    st.subheader("📊 차트 1: 상권 유형별 평균 임대료 변화율 × 평균 공실률 변화 매트릭스")
+    st.markdown("축제 상권(실험군)과 일반 상권(대조군)의 전체 평균값을 도출하여 단 두 개의 대표 포인트로 직관적인 비교를 제공합니다.")
     
-    xmax = df_relation["임대료변화율"].max()
-    xmin = df_relation["임대료변화율"].min()
-    ymax = df_relation["공실률변화량"].max()
-    ymin = df_relation["공실률변화량"].min()
+    # 상권유형별 대표 데이터 평균 계산
+    df_chart1 = df_relation.groupby("상권구분").agg({
+        "임대료변화율": "mean",
+        "공실률변화량": "mean",
+        "외부방문자유입": "mean"
+    }).reset_index()
+    
+    # 소수 셋째자리 버림 적용
+    df_chart1["임대료변화율"] = df_chart1["임대료변화율"].apply(trunc_to_2_decimals)
+    df_chart1["공실률변화량"] = df_chart1["공실률변화량"].apply(trunc_to_2_decimals)
+    df_chart1["외부방문자유입"] = df_chart1["외부방문자유입"].apply(trunc_to_2_decimals)
+    
+    # 가독성을 위해 두 마커 모두 동일하게 크고 명확하게 설정
+    df_chart1["마커크기"] = 35
+    
+    xmax = df_chart1["임대료변화율"].max()
+    xmin = df_chart1["임대료변화율"].min()
+    ymax = df_chart1["공실률변화량"].max()
+    ymin = df_chart1["공실률변화량"].min()
     
     fig1 = px.scatter(
-        df_relation,
+        df_chart1,
         x="임대료변화율",
         y="공실률변화량",
-        size="점크기_방문자",
+        size="마커크기",
         color="상권구분",
-        hover_name=reg_col_vac,
+        text="상권구분",
         hover_data={
             "임대료변화율": ":.2f%",
             "공실률변화량": ":.2fp.p.",
-            "외부방문자유입": ":.2f",
-            "점크기_방문자": False
+            "외부방문자유입": ":.2f%",
+            "마커크기": False
         },
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
             "일반 상권 (대조군)": "#1F77B4"
         },
         labels={
-            "임대료변화율": f"임대료 변화율 (% / {first_q} ➔ {last_q})",
-            "공실률변화량": f"공실률 변화량 (p.p. / {first_q} ➔ {last_q})",
-            "외부방문자유입": "외부방문자 유입 (%)",
+            "임대료변화율": "평균 임대료 변화율 (%)",
+            "공실률변화량": "평균 공실률 변화량 (p.p.)",
+            "외부방문자유입": "평균 외부방문자 유입 (%)",
             "상권구분": "상권 유형"
         },
         template="plotly_white"
     )
     
-    fig1.add_annotation(x=xmax * 0.7, y=ymax * 0.7, text="🔴 위험 (젠트리피케이션 압력)", showarrow=False, font=dict(color="#FF4B4B", size=11))
-    fig1.add_annotation(x=xmin * 0.7, y=ymax * 0.7, text="🟡 침체 (임대하락/공실상승)", showarrow=False, font=dict(color="#D62728", size=11))
-    fig1.add_annotation(x=xmax * 0.7, y=ymin * 0.7, text="🟢 성장 (임대상승/공실안정)", showarrow=False, font=dict(color="#2CA02C", size=11))
-    fig1.add_annotation(x=xmin * 0.7, y=ymin * 0.7, text="🔵 안정 (둔화/정체)", showarrow=False, font=dict(color="#1F77B4", size=11))
+    # 마커 위에 위치할 라벨 텍스트 폰트 크기 증대 및 마커 테두리 강조
+    fig1.update_traces(
+        textposition='top center',
+        marker=dict(opacity=0.9, line=dict(width=2, color='DarkSlateGrey')),
+        textfont=dict(size=14, color='black', family="Arial Black")
+    )
     
     fig1.add_hline(y=0, line_dash="dash", line_color="#C0C0C0")
     fig1.add_vline(x=0, line_dash="dash", line_color="#C0C0C0")
-    fig1.update_traces(marker=dict(opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
     
-    st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix_clean")
+    # 포인트가 여백 밖으로 짤리지 않도록 적절한 축 범위 수동 여백 지정
+    x_pad = max(abs(xmax), abs(xmin), 1.0) * 0.4
+    y_pad = max(abs(ymax), abs(ymin), 1.0) * 0.4
+    fig1.update_xaxes(range=[xmin - x_pad, xmax + x_pad])
+    fig1.update_yaxes(range=[ymin - y_pad, ymax + y_pad])
+    
+    st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix_clean_aggregated")
     
     # ------------------------------------------
     # 차트 2번: 3차원 버블 차트
@@ -907,22 +925,4 @@ def main():
         st.write("실제 데이터베이스 내부 테이블 리스트:")
         tables = get_db_tables()
         if tables:
-            st.code("\n".join(tables), language="text")
-        else:
-            st.error("테이블을 조회할 수 없거나 project1.db 파일이 누락되었습니다.")
-            
-    page = st.sidebar.selectbox(
-        "원하는 분석 페이지를 선택하세요.",
-        ["1. 축제 현황 분석", "2. 젠트리피케이션 분석", "3. 세금 효율성 분석"]
-    )
-    
-    if page == "1. 축제 현황 분석":
-        render_page1()
-    elif page == "2. 젠트리피케이션 분석":
-        render_page2()
-    elif page == "3. 세금 효율성 분석":
-        render_page3()
-
-
-if __name__ == "__main__":
-    main()
+            st.code("\n".j
