@@ -925,4 +925,22 @@ def main():
         st.write("실제 데이터베이스 내부 테이블 리스트:")
         tables = get_db_tables()
         if tables:
-            st.code("\n".j
+            st.code("\n".join(tables), language="text")
+        else:
+            st.error("테이블을 조회할 수 없거나 project1.db 파일이 누락되었습니다.")
+            
+    page = st.sidebar.selectbox(
+        "원하는 분석 페이지를 선택하세요.",
+        ["1. 축제 현황 분석", "2. 젠트리피케이션 분석", "3. 세금 효율성 분석"]
+    )
+    
+    if page == "1. 축제 현황 분석":
+        render_page1()
+    elif page == "2. 젠트리피케이션 분석":
+        render_page2()
+    elif page == "3. 세금 효율성 분석":
+        render_page3()
+
+
+if __name__ == "__main__":
+    main()
