@@ -12,7 +12,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="공공데이터 분석 대시보드", page_icon="📊", layout="wide")
 
-DB_FILE = "project1.db"
+DB_FILE = "project.db"
 
 
 # ==========================================
