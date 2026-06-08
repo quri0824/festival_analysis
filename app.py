@@ -460,7 +460,7 @@ def render_page1():
 
 
 # ==========================================
-# 2. 페이지 2: 젠트리피케이션 분석 (상권명 기준 전면 개편)
+# 2. 페이지 2: 젠트리피케이션 분석 (상권명 기준 전면 개편 및 라벨 중복 제거 알고리즘 반영)
 # ==========================================
 def render_page2():
     st.title("🏢 젠트리피케이션과 지역 축제 상관성 분석")
@@ -488,7 +488,7 @@ def render_page2():
     else:
         first_q, last_q = "2022_1Q", "2024_2Q"
         
-    # [상권명 타깃 컬럼 검출 우선순위 설정]
+    # 상권명 타깃 컬럼 검출
     reg_col_vac = find_col(df_vac.columns, ["상권명", "상권"]) or detect_region_col(df_vac)
     reg_col_rent = find_col(df_rent.columns, ["상권명", "상권"]) or detect_region_col(df_rent)
     
@@ -515,7 +515,7 @@ def render_page2():
         right_on=reg_col_rent
     )
     
-    # [요구사항 반영] 각 상권명별로 하나의 고유 데이터만 보장하도록 1차 GroupBy 적용
+    # 각 상권명별로 하나의 고유 데이터만 보장하도록 GroupBy 적용
     df_prop = df_prop.groupby(reg_col_vac).agg({
         "공실률변화량": "mean",
         "임대료변화율": "mean"
@@ -564,7 +564,7 @@ def render_page2():
         lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)"
     )
     
-    # 외부방문자 유치 비율을 마커 크기에 반영 (기본값 설정하여 시인성 보장)
+    # 외부방문자 유치 비율을 마커 크기에 반영
     df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 8
     df_relation.loc[df_relation["점크기_방문자"] < 8, "점크기_방문자"] = 12
     
@@ -573,29 +573,58 @@ def render_page2():
     df_relation.loc[df_relation["점크기_예산"] < 5, "점크기_예산"] = 8
     
     # ------------------------------------------
-    # 차트 1번: 임대료 변화율 x 공실률 변화 (상권명 기준 고유 표출)
+    # 차트 1번: 상권명 겹침 제거 알고리즘 도입
     # ------------------------------------------
     st.subheader("📊 차트 1: 개별 상권명별 임대료 변화율 × 공실률 변화 사분면 매트릭스")
     st.markdown("X축(임대료 변화율)과 Y축(공실률 변화량)에 따른 각 **상권명** 권역별 고유 분포를 나타냅니다.")
     
-    xmax = df_relation["임대료변화율"].max()
-    xmin = df_relation["임대료변화율"].min()
-    ymax = df_relation["공실률변화량"].max()
-    ymin = df_relation["공실률변화량"].min()
+    # 점의 크기(점크기_방문자) 기준으로 정렬하여 큰 상권명을 우선적으로 배치
+    df_relation = df_relation.sort_values(by="점크기_방문자", ascending=False).copy()
+    df_relation["차트라벨"] = df_relation[reg_col_vac].astype(str)
     
+    # 거리 계산을 위한 최대/최소값 및 범위 계산
+    x_min, x_max = df_relation["임대료변화율"].min(), df_relation["임대료변화율"].max()
+    y_min, y_max = df_relation["공실률변화량"].min(), df_relation["공실률변화량"].max()
+    x_span = (x_max - x_min) if (x_max - x_min) > 0 else 1.0
+    y_span = (y_max - y_min) if (y_max - y_min) > 0 else 1.0
+    
+    # 겹침 방지 필터링: 활성화된 좌표 목록 기록
+    active_coords = []
+    overlap_threshold = 0.08  # 차트 크기 대비 8% 이내에 위치하면 겹치는 것으로 판단
+    
+    for idx, row in df_relation.iterrows():
+        # 좌표 정규화 (0~1 범위)
+        rx = (row["임대료변화율"] - x_min) / x_span
+        ry = (row["공실률변화량"] - y_min) / y_span
+        
+        is_overlapping = False
+        for ax, ay in active_coords:
+            dist = ((rx - ax)**2 + (ry - ay)**2)**0.5
+            if dist < overlap_threshold:
+                is_overlapping = True
+                break
+                
+        if is_overlapping:
+            # 겹치므로 상대적으로 점이 더 작은 이 항목의 라벨을 빈 값으로 설정하여 숨김
+            df_relation.at[idx, "차트라벨"] = ""
+        else:
+            # 겹치지 않으므로 라벨 유지 및 좌표 등록
+            active_coords.append((rx, ry))
+            
     fig1 = px.scatter(
         df_relation,
         x="임대료변화율",
         y="공실률변화량",
         size="점크기_방문자",
         color="상권구분",
-        text=reg_col_vac,  # 마커 텍스트로 '상권명' 출력
-        hover_name=reg_col_vac,
+        text="차트라벨",  # 겹침이 필터링된 라벨 적용
+        hover_name=reg_col_vac,  # 툴팁에는 전체 상권명 노출 유지
         hover_data={
             "임대료변화율": ":.2f%",
             "공실률변화량": ":.2fp.p.",
             "외부방문자유입": ":.2f%",
-            "점크기_방문자": False
+            "점크기_방문자": False,
+            "차트라벨": False
         },
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
@@ -609,11 +638,11 @@ def render_page2():
         template="plotly_white"
     )
     
-    # 텍스트 오프셋 조정 및 시인성 극대화
+    # [가독성 향상] 상권명 라벨 크기 축소 (9.5) 및 차분한 색상과 얇은 글씨체 적용
     fig1.update_traces(
         textposition='top center',
         marker=dict(opacity=0.85, line=dict(width=1.5, color='DarkSlateGrey')),
-        textfont=dict(size=12, color='black', family="Arial Black")
+        textfont=dict(size=9.5, color='#333333', family="Arial")
     )
     
     fig1.add_hline(y=0, line_dash="dash", line_color="#C0C0C0")
