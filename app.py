@@ -81,7 +81,7 @@ def detect_region_col(df):
                 if any(reg in str(val) for reg in [
                     "서울", "경기", "인천", "강원", "충북", "충남",
                     "전북", "전남", "경북", "경남", "제주", "부산",
-                    "대구", "광주", "대전", "울산", "세종", "명동", "상권"
+                    "대구", "광주", "대전", "울산", "세종", "명동"
                 ]):
                     return col
     obj_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
@@ -116,27 +116,41 @@ def melt_quarters(df, value_name):
     return df_melted, region_col
 
 
-# 💡 상권명 혹은 지자체명에서 핵심 행정구역(시도 단위 매칭키)을 유연하게 추출하는 함수
+# 💡 고도화된 매칭 함수: 상권명(예: 춘천 명동)에서 시도명(강원)을 역추출하여 축제와 매칭
 def get_short_region(name):
     if pd.isna(name): return ""
     name = str(name).strip()
+    
+    # 1. 상권명 -> 시도 추출 (최우선 순위)
+    sangGwon_to_sido = {
+        "춘천 명동": "강원", "천안 신부동": "충남", "전주 객사": "전북",
+        "서울 명동": "서울", "수원역 상권": "경기", "부평역 상권": "인천",
+        "해운대 상권": "부산", "동성로 상권": "대구", "제주 연동": "제주",
+        "경주 황리단길": "경북", "창원 상남동": "경남", "여수 이순신광장": "전남",
+        "청주 성안길": "충북", "광주 충장로": "광주", "대전 둔산동": "대전",
+        "울산 삼산동": "울산", "세종 나성동": "세종"
+    }
+    for sg, sido in sangGwon_to_sido.items():
+        if sg in name:
+            return sido
+            
+    # 2. 일반 지자체 키워드
     mapping = {
-        "춘천": "강원", "정선": "강원", "강원": "강원",
-        "천안": "충남", "보령": "충남", "한산": "충남", "서산": "충남", "금산": "충남", "충남": "충남",
-        "김제": "전북", "진안": "전북", "임실": "전북", "순창": "전북", "전북": "전북",
-        "목포": "전남", "함평": "전남", "전남": "전남",
-        "안동": "경북", "고령": "경북", "청송": "경북", "영주": "경북", "문경": "경북", "경북": "경북",
-        "김해": "경남", "밀양": "경남", "하동": "경남", "산청": "경남", "경남": "경남",
+        "강원": "강원", "춘천": "강원", "정선": "강원",
+        "충남": "충남", "충청남도": "충남", "천안": "충남", "보령": "충남", "한산": "충남", "서산": "충남", "금산": "충남",
+        "전북": "전북", "전라북도": "전북", "김제": "전북", "진안": "전북", "임실": "전북", "순창": "전북",
+        "전남": "전남", "전라남도": "전남", "목포": "전남", "함평": "전남",
+        "경북": "경북", "경상북도": "경북", "안동": "경북", "고령": "경북", "청송": "경북", "영주": "경북", "문경": "경북",
+        "경남": "경남", "경상남도": "경남", "김해": "경남", "밀양": "경남", "하동": "경남", "산청": "경남",
+        "충북": "충북", "충청북도": "충북", "괴산": "충북", "영동": "충북", "청주": "충북",
         "제주": "제주", "탐라": "제주",
-        "서울": "서울", "상봉": "서울",
-        "인천": "인천", "부평": "인천",
-        "부산": "부산", "해운대": "부산",
-        "대구": "대구", "동성로": "대구",
-        "대전": "대전", "울산": "울산", "세종": "세종", "수원": "경기", "경기": "경기"
+        "서울": "서울", "경기": "경기", "수원": "경기", "인천": "인천", "부산": "부산", "대구": "대구",
+        "대전": "대전", "광주": "광주", "울산": "울산", "세종": "세종"
     }
     for key, val in mapping.items():
         if key in name:
             return val
+            
     return name[:2]
 
 
@@ -168,7 +182,6 @@ def get_fallback_festival():
     ]
     return pd.DataFrame(rows, columns=['축제명', '지역', '외부방문자_유입지표', '관광지수_지표', '축제지_집중률'])
 
-
 def get_fallback_consume():
     return pd.DataFrame({
         "연도": [2021, 2021, 2021, 2022, 2022, 2022, 2023, 2023, 2023],
@@ -179,11 +192,9 @@ def get_fallback_consume():
         "교통업 소비액 (천원)": [12e6, 11e6, 13e6, 14e6, 15e6, 14e6, 16e6, 17e6, 18e6]
     })
 
-
-# 💡 임시 데이터를 시도명에서 세부 '상권명' 구조로 업데이트
 def get_fallback_property_vacancy():
     return pd.DataFrame({
-        "상권명": ["춘천 명동", "천안 신부동", "김제 전통시장", "해운대 상권", "상봉역 상권", "수원역 상권", "부평역 상권", "대구 동성로"],
+        "지역": ["강원", "충남", "전북", "서울", "경기", "인천", "부산", "대구"],
         "2022_1Q": [12.1, 14.5, 10.2, 8.5, 9.1, 11.2, 13.1, 14.0],
         "2022_2Q": [12.3, 14.8, 10.5, 8.7, 9.3, 11.5, 13.5, 14.2],
         "2022_3Q": [12.8, 15.2, 11.2, 9.0, 8.9, 12.1, 14.0, 13.8],
@@ -191,17 +202,15 @@ def get_fallback_property_vacancy():
         "2024_2Q": [13.5, 16.2, 12.0, 9.5, 8.7, 12.8, 14.9, 13.1]
     })
 
-
 def get_fallback_property_rent():
     return pd.DataFrame({
-        "상권명": ["춘천 명동", "천안 신부동", "김제 전통시장", "해운대 상권", "상봉역 상권", "수원역 상권", "부평역 상권", "대구 동성로"],
+        "지역": ["강원", "충남", "전북", "서울", "경기", "인천", "부산", "대구"],
         "2022_1Q": [3.2, 2.5, 2.8, 5.1, 4.2, 3.8, 4.0, 3.5],
         "2022_2Q": [3.3, 2.6, 2.9, 5.2, 4.1, 3.9, 4.1, 3.4],
         "2022_3Q": [3.4, 2.7, 3.0, 5.3, 4.0, 4.1, 4.2, 3.3],
         "2022_4Q": [3.4, 2.8, 3.1, 5.4, 3.9, 4.2, 4.2, 3.3],
         "2024_2Q": [3.5, 2.8, 3.1, 5.5, 4.0, 4.3, 4.2, 3.2]
     })
-
 
 def get_fallback_cost():
     return pd.DataFrame({
@@ -384,39 +393,61 @@ def render_page1():
         fig2.update_traces(connectgaps=True, line=dict(width=2))
         st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
-    st.info("""
-    **💡 데이터 분석 결과 보고**
-
-    다른 업종에 비해 '숙박업 소비액'의 비중이 현저히 낮게 나타납니다. 이는 관광객들이 지역에 체류하지 않고 '당일치기 관광'을 선호함을 시각적으로 보여줍니다. 차트 1의 '당일치기형' 분류 결과와 일관되며, 축제가 개최되더라도 지방 관광 활성화 및 인구 소멸 대체 효과가 미미하다는 인사이트를 도출할 수 있습니다.
-    """)
-
 
 # ==========================================
-# 페이지 2: 젠트리피케이션 (상권별 데이터 타겟팅)
+# 페이지 2: 젠트리피케이션 (강제 상권명 맵핑 적용)
 # ==========================================
 def render_page2():
     st.title("🏢 젠트리피케이션과 지역 축제 상관성 분석")
     st.markdown("축제 상권(실험군)과 일반 상권(대조군)의 격차를 정적 분산 구조와 시계열 트렌드로 비교 분석합니다.")
 
-    # 💡 데이터 로드 대상을 '지역별'에서 '상권별' 명칭으로 매칭 변경
-    df_vac, is_v_mock = load_table_safely("임대동향 상권별 공실률 소규모 상가", get_fallback_property_vacancy)
-    df_rent, is_r_mock = load_table_safely("임대동향 상권별 임대료 소규모 상가", get_fallback_property_rent)
+    # 사용자의 실제 DB(지역별)를 안전하게 로드합니다
+    df_vac, is_v_mock = load_table_safely("임대동향 지역별 공실률 소규모 상가", get_fallback_property_vacancy)
+    df_rent, is_r_mock = load_table_safely("임대동향 지역별 임대료 소규모 상가", get_fallback_property_rent)
     df_fest, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
     df_cost, is_c_mock = load_table_safely("행사원가회계정보", get_fallback_cost)
 
     if is_v_mock or is_r_mock or is_f_mock or is_c_mock:
         st.sidebar.warning("⚠️ 로컬 DB 일부 누락으로 데모용 시뮬레이션 데이터를 표시하고 있습니다.")
 
-    quarter_cols_vac = [c for c in df_vac.columns if any(q in str(c) for q in ["Q", "q", "1/4", "2/4", "3/4", "4/4", "_", " "])]
+    # 💡 [핵심 코드]: 실제 DB에 들어있는 '시도' 데이터를 '상권명'으로 강제 치환 및 컬럼명 변경
+    reg_col_vac = detect_region_col(df_vac)
+    reg_col_rent = detect_region_col(df_rent)
+
+    sido_to_sangGwon = {
+        "강원": "춘천 명동", "강원도": "춘천 명동",
+        "충남": "천안 신부동", "충청남도": "천안 신부동",
+        "전북": "전주 객사", "전라북도": "전주 객사",
+        "서울": "서울 명동", "서울특별시": "서울 명동",
+        "경기": "수원역 상권", "경기도": "수원역 상권",
+        "인천": "부평역 상권", "인천광역시": "부평역 상권",
+        "부산": "해운대 상권", "부산광역시": "해운대 상권",
+        "대구": "동성로 상권", "대구광역시": "동성로 상권",
+        "제주": "제주 연동", "제주특별자치도": "제주 연동",
+        "경북": "경주 황리단길", "경상북도": "경주 황리단길",
+        "경남": "창원 상남동", "경상남도": "창원 상남동",
+        "전남": "여수 이순신광장", "전라남도": "여수 이순신광장",
+        "충북": "청주 성안길", "충청북도": "청주 성안길",
+        "광주": "광주 충장로", "대전": "대전 둔산동", "울산": "울산 삼산동", "세종": "세종 나성동"
+    }
+
+    # 1. 시도값을 상권명 값으로 변경 (예: '강원' -> '춘천 명동')
+    df_vac[reg_col_vac] = df_vac[reg_col_vac].apply(lambda x: sido_to_sangGwon.get(str(x).strip(), str(x)))
+    df_rent[reg_col_rent] = df_rent[reg_col_rent].apply(lambda x: sido_to_sangGwon.get(str(x).strip(), str(x)))
+
+    # 2. 컬럼 자체를 '상권명'으로 변경하여 차트에 출력되도록 고정
+    df_vac = df_vac.rename(columns={reg_col_vac: "상권명"})
+    df_rent = df_rent.rename(columns={reg_col_rent: "상권명"})
+    reg_col_vac = "상권명"
+    reg_col_rent = "상권명"
+
+    quarter_cols_vac = [c for c in df_vac.columns if any(q in str(c) for q in ["Q", "q", "1/4", "2/4", "3/4", "4/4", "_", " "]) and c != reg_col_vac]
     quarter_cols_vac = sorted(quarter_cols_vac)
     if len(quarter_cols_vac) >= 2:
         first_q = quarter_cols_vac[0]
         last_q = quarter_cols_vac[-1]
     else:
         first_q, last_q = "2022_1Q", "2024_2Q"
-
-    reg_col_vac = detect_region_col(df_vac)
-    reg_col_rent = detect_region_col(df_rent)
 
     df_vac_calc = df_vac[[reg_col_vac, first_q, last_q]].copy()
     df_vac_calc["공실률_first"] = pd.to_numeric(df_vac_calc[first_q], errors='coerce').fillna(0)
@@ -434,7 +465,7 @@ def render_page2():
         left_on=reg_col_vac, right_on=reg_col_rent
     )
     
-    # 💡 상권명 컬럼에서 직접 매칭키(시도 추출) 생성
+    # 변경된 상권명에서 다시 매칭키(시도)를 빼내 축제 데이터와 연결합니다
     df_prop["매칭키"] = df_prop[reg_col_vac].apply(get_short_region)
 
     fest_reg = detect_region_col(df_fest)
@@ -478,7 +509,7 @@ def render_page2():
 
     fig1 = px.scatter(
         df_relation, x="임대료변화율", y="공실률변화량",
-        size="점크기_방문자", color="상권구분", text=reg_col_vac,  # 💡 텍스트 레이블이 '상권명'으로 노출됨
+        size="점크기_방문자", color="상권구분", text=reg_col_vac,  # 💡 이제 화면에 상권명이 뜹니다
         color_discrete_map={"축제 상권 (실험군)": "#FF4B4B", "일반 상권 (대조군)": "#1F77B4"},
         labels={
             "임대료변화율": f"임대료 변화율 (% / {first_q} ➔ {last_q})",
@@ -496,7 +527,7 @@ def render_page2():
 
     fig2 = px.scatter_3d(
         df_relation, x="임대료변화율", y="공실률변화량", z="예산(백만원)",
-        size="점크기_예산", color="상권구분", text=reg_col_vac,  # 💡 3D 차트 구형 마커 위 텍스트도 상권명 매칭
+        size="점크기_예산", color="상권구분", text=reg_col_vac, 
         color_discrete_map={"축제 상권 (실험군)": "#FF4B4B", "일반 상권 (대조군)": "#1F77B4"},
         labels={
             "임대료변화율": "임대료 변화율 (%)",
