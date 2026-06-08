@@ -15,7 +15,7 @@ st.set_page_config(
 
 DB_FILE = "project1.db"
 
-# [안정성 보완] DB 파일이 없어도 강제 종료(stop)하지 않고 데모 모드로 자동 진입합니다.
+# DB 파일이 없어도 강제 종료하지 않고 내장 데모 모드로 안전하게 자동 진입합니다.
 db_exists = os.path.exists(DB_FILE)
 if not db_exists:
     st.sidebar.warning("⚠️ project1.db 파일을 찾을 수 없어 내장된 데모 데이터로 앱을 실행합니다.")
@@ -135,64 +135,42 @@ def trunc_to_2_decimals(val):
         return 0.0
 
 
-# 지명 전처리 분석 파서 (기초지자체 및 축제명을 임대차 부동산의 광역 단위로 일관성 있게 매칭)
+# 지명 전처리 분석 파서 (기초지자체, 상권명, 축제명을 개별 로컬 도시 단위로 표준 매핑)
 def get_short_region(text):
     text_str = str(text).strip()
     
-    # 1. 광역 지자체명 표준화 매핑 테이블
-    prov_mapping = {
-        "강원도": "강원", "강원": "강원",
-        "충청남도": "충남", "충남": "충남",
-        "전라북도": "전북", "전북": "전북", "전북특별자치도": "전북",
-        "경상북도": "경북", "경북": "경북",
-        "제주특별자치도": "제주", "제주": "제주", "제주도": "제주",
-        "서울특별시": "서울", "서울": "서울",
-        "경기도": "경기", "경기": "경기",
-        "인천광역시": "인천", "인천": "인천",
-        "부산광역시": "부산", "부산": "부산",
-        "대구광역시": "대구", "대구": "대구",
-        "광주광역시": "광주", "광주": "광주",
-        "대전광역시": "대전", "대전": "대전",
-        "울산광역시": "울산", "울산": "울산",
-        "세종특별자치시": "세종", "세종": "세종",
-        "충청북도": "충북", "충북": "충북",
-        "전라남도": "전남", "전남": "전남",
-        "경상남도": "경남", "경남": "경남"
+    # 1. 특정 핵심 축제 및 상권의 개별 매칭 예외 규칙 정의
+    special_mapping = {
+        "한산모시": "서천", 
+        "한산": "서천", 
+        "서천": "서천", 
+        "탐라": "제주", 
+        "제주": "제주",
+        "춘천": "춘천",
+        "임실": "임실",
+        "순창": "순창",
+        "고령": "고령",
+        "천안": "천안",
+        "정선": "정선"
     }
     
-    for full_prov, std_prov in prov_mapping.items():
-        if full_prov in text_str:
-            return std_prov
-            
-    # 2. 기초지자체 및 축제명 키워드를 해당 광역 지자체명으로 변환
-    city_to_province = {
-        "춘천": "강원", "정선": "강원", "강릉": "강원",
-        "서천": "충남", "천안": "충남", "금산": "충남", "한산": "충남",
-        "임실": "전북", "순창": "전북", "남원": "전북", "전주": "전북",
-        "고령": "경북", "안동": "경북", "경주": "경북",
-        "제주": "제주", "탐라": "제주"
-    }
-    
-    for city, prov in city_to_province.items():
-        if city in text_str:
-            return prov
-            
-    # 3. 예외적인 맵핑 및 형태소 기반 폴백
-    special_mapping = {"한산": "충남", "서천": "충남", "탐라": "제주", "제주": "제주"}
     for key, val in special_mapping.items():
         if key in text_str:
             return val
             
-    keywords = ["춘천", "정선", "임실", "고령", "천안", "순창", "남원", "강릉", "울릉", "여수", "경주", "안동"]
+    # 2. 대표적인 상권 및 주요 도시 키워드 전처리
+    keywords = ["춘천", "정선", "임실", "고령", "천안", "순창", "남원", "강릉", "울릉", "여수", "경주", "안동", "명동", "강남", "홍대", "해운대", "동성로"]
     for city in keywords:
         if city in text_str:
-            return city_to_province.get(city, city[:2])
+            return city
             
+    # 3. 시, 군, 구, 도, 역 등의 행정구역 식별어 제거 후 반환
     words = text_str.split()
     if words:
         target_word = words[-1]
-        clean_word = target_word.replace("시", "").replace("군", "").replace("구", "").replace("도", "").strip()
-        return clean_word[:2]
+        clean_word = target_word.replace("시", "").replace("군", "").replace("구", "").replace("도", "").replace("역", "").strip()
+        if len(clean_word) >= 2:
+            return clean_word[:2]
     return text_str[:2]
 
 extract_city_core = get_short_region
@@ -225,12 +203,14 @@ def find_matching_festival_row(sub_org, sub_name, df_f_map):
     return None
 
 
-# 가로 형태 데이터를 세로 형태로 변환
-def melt_quarters(df, value_name):
+# 가로 형태 데이터를 세로 형태로 변환 (유연하게 region_col을 파라미터로 처리 가능)
+def melt_quarters(df, value_name, region_col=None):
     if df.empty:
         return pd.DataFrame(), None
     
-    region_col = detect_region_col(df)
+    if not region_col:
+        region_col = detect_region_col(df)
+        
     quarter_cols = [
         c for c in df.columns 
         if c != region_col and (
@@ -280,7 +260,7 @@ def pivot_festival_data(df_fest):
 
 
 # ==========================================
-# Fallback 시뮬레이션용 예비 데이터 생성기
+# Fallback 시뮬레이션용 예비 데이터 생성기 (상권명-축제명 연동형으로 확장)
 # ==========================================
 def get_fallback_festival():
     return pd.DataFrame({
@@ -301,22 +281,24 @@ def get_fallback_consume():
 
 def get_fallback_property_vacancy():
     return pd.DataFrame({
-        "지역": ["강원", "충남", "전북", "서울", "경기", "인천", "부산", "대구"],
-        "2022_1Q": [12.1, 14.5, 10.2, 8.5, 9.1, 11.2, 13.1, 14.0],
-        "2022_2Q": [12.3, 14.8, 10.5, 8.7, 9.3, 11.5, 13.5, 14.2],
-        "2022_3Q": [12.8, 15.2, 11.2, 9.0, 8.9, 12.1, 14.0, 13.8],
-        "2022_4Q": [13.1, 15.9, 11.8, 9.2, 8.5, 12.4, 14.5, 13.3],
-        "2024_2Q": [13.5, 16.2, 12.0, 9.5, 8.7, 12.8, 14.9, 13.1]
+        "지역": ["강원", "충남", "전북", "경북", "충남", "제주", "강원", "전북", "서울", "서울", "부산", "대구"],
+        "상권명": ["춘천역", "서천", "임실", "고령", "천안역", "제주", "정선", "순창", "명동", "강남역", "해운대", "동성로"],
+        "2022_1Q": [12.1, 14.5, 10.2, 8.5, 9.1, 11.2, 13.1, 14.0, 8.5, 9.1, 11.2, 13.1],
+        "2022_2Q": [12.3, 14.8, 10.5, 8.7, 9.3, 11.5, 13.5, 14.2, 8.7, 9.3, 11.5, 13.5],
+        "2022_3Q": [12.8, 15.2, 11.2, 9.0, 8.9, 12.1, 14.0, 13.8, 9.0, 8.9, 12.1, 14.0],
+        "2022_4Q": [13.1, 15.9, 11.8, 9.2, 8.5, 12.4, 14.5, 13.3, 9.2, 8.5, 12.4, 14.5],
+        "2024_2Q": [13.5, 16.2, 12.0, 9.5, 8.7, 12.8, 14.9, 13.1, 9.5, 8.7, 12.8, 14.9]
     })
 
 def get_fallback_property_rent():
     return pd.DataFrame({
-        "지역": ["강원", "충남", "전북", "서울", "경기", "인천", "부산", "대구"],
-        "2022_1Q": [3.2, 2.5, 2.8, 5.1, 4.2, 3.8, 4.0, 3.5],
-        "2022_2Q": [3.3, 2.6, 2.9, 5.2, 4.1, 3.9, 4.1, 3.4],
-        "2022_3Q": [3.4, 2.7, 3.0, 5.3, 4.0, 4.1, 4.2, 3.3],
-        "2022_4Q": [3.4, 2.8, 3.1, 5.4, 3.9, 4.2, 4.2, 3.3],
-        "2024_2Q": [3.5, 2.8, 3.1, 5.5, 4.0, 4.3, 4.2, 3.2]
+        "지역": ["강원", "충남", "전북", "경북", "충남", "제주", "강원", "전북", "서울", "서울", "부산", "대구"],
+        "상권명": ["춘천역", "서천", "임실", "고령", "천안역", "제주", "정선", "순창", "명동", "강남역", "해운대", "동성로"],
+        "2022_1Q": [3.2, 2.5, 2.8, 3.5, 4.2, 3.8, 3.0, 2.9, 5.1, 4.2, 3.8, 3.5],
+        "2022_2Q": [3.3, 2.6, 2.9, 3.4, 4.1, 3.9, 3.1, 2.9, 5.2, 4.1, 3.9, 3.4],
+        "2022_3Q": [3.4, 2.7, 3.0, 3.3, 4.0, 4.1, 3.2, 3.0, 5.3, 4.0, 4.1, 3.3],
+        "2022_4Q": [3.4, 2.8, 3.1, 3.3, 3.9, 4.2, 3.2, 3.1, 5.4, 3.9, 4.2, 3.3],
+        "2024_2Q": [3.5, 2.8, 3.1, 3.2, 4.0, 4.3, 3.2, 3.1, 5.5, 4.0, 4.3, 3.2]
     })
 
 def get_fallback_cost():
@@ -478,7 +460,7 @@ def render_page1():
 
 
 # ==========================================
-# 2. 페이지 2: 젠트리피케이션 분석 (상권별 단일 대표값 및 차트 가독성 극대화)
+# 2. 페이지 2: 젠트리피케이션 분석 (상권명 기준 전면 개편)
 # ==========================================
 def render_page2():
     st.title("🏢 젠트리피케이션과 지역 축제 상관성 분석")
@@ -506,30 +488,40 @@ def render_page2():
     else:
         first_q, last_q = "2022_1Q", "2024_2Q"
         
-    reg_col_vac = detect_region_col(df_vac)
-    reg_col_rent = detect_region_col(df_rent)
+    # [상권명 타깃 컬럼 검출 우선순위 설정]
+    reg_col_vac = find_col(df_vac.columns, ["상권명", "상권"]) or detect_region_col(df_vac)
+    reg_col_rent = find_col(df_rent.columns, ["상권명", "상권"]) or detect_region_col(df_rent)
     
     df_vac_calc = df_vac[[reg_col_vac, first_q, last_q]].copy()
     df_vac_calc["공실률_first"] = pd.to_numeric(df_vac_calc[first_q], errors='coerce').fillna(0)
     df_vac_calc["공실률_last"] = pd.to_numeric(df_vac_calc[last_q], errors='coerce').fillna(0)
     
-    # [수식 반영] 공실률 변화량 구한 후 소수점 셋째자리 버림 처리
+    # 공실률 변화량 구한 후 소수점 셋째자리 버림 처리
     df_vac_calc["공실률변화량"] = (df_vac_calc["공실률_last"] - df_vac_calc["공실률_first"]).apply(trunc_to_2_decimals)
     
     df_rent_calc = df_rent[[reg_col_rent, first_q, last_q]].copy()
     df_rent_calc["임대료_first"] = pd.to_numeric(df_rent_calc[first_q], errors='coerce').fillna(1e-5)
     df_rent_calc["임대료_last"] = pd.to_numeric(df_rent_calc[last_q], errors='coerce').fillna(0)
     
-    # [수식 반영] 임대료 변화율 구한 후 소수점 셋째자리 버림 처리
+    # 임대료 변화율 구한 후 소수점 셋째자리 버림 처리
     raw_rent_change = ((df_rent_calc["임대료_last"] - df_rent_calc["임대료_first"]) / df_rent_calc["임대료_first"]) * 100
     df_rent_calc["임대료변화율"] = raw_rent_change.apply(trunc_to_2_decimals)
     
+    # 상권명 기준으로 임대차 원자료 병합
     df_prop = pd.merge(
         df_vac_calc[[reg_col_vac, "공실률변화량"]], 
         df_rent_calc[[reg_col_rent, "임대료변화율"]], 
         left_on=reg_col_vac, 
         right_on=reg_col_rent
     )
+    
+    # [요구사항 반영] 각 상권명별로 하나의 고유 데이터만 보장하도록 1차 GroupBy 적용
+    df_prop = df_prop.groupby(reg_col_vac).agg({
+        "공실률변화량": "mean",
+        "임대료변화율": "mean"
+    }).reset_index()
+    
+    # 상권명을 로컬 도시명으로 전처리 맵핑
     df_prop["매칭키"] = df_prop[reg_col_vac].apply(get_short_region)
     
     fest_reg = detect_region_col(df_fest)
@@ -537,7 +529,7 @@ def render_page2():
     
     df_fest_clean = df_fest.copy()
     
-    # [수식 반영] 외부방문자 유입 지표에 일괄적으로 100을 곱함
+    # 외부방문자 유입 지표에 일괄적으로 100을 곱함 (퍼센트화)
     df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0) * 100
     
     df_f_sub = df_fest_clean[[fest_reg, foreign_col]].copy()
@@ -561,6 +553,7 @@ def render_page2():
     df_cost_group.columns = ["예산지자체", "예산총액(원)"]
     df_cost_group["매칭키"] = df_cost_group["예산지자체"].apply(get_short_region)
     
+    # 데이터 연결 (상권명 <-> 도시/지자체 단위 맵핑 매칭)
     df_relation = pd.merge(df_prop, df_fest_group, on="매칭키", how="left")
     df_relation = pd.merge(df_relation, df_cost_group, on="매칭키", how="left")
     
@@ -571,75 +564,70 @@ def render_page2():
         lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)"
     )
     
+    # 외부방문자 유치 비율을 마커 크기에 반영 (기본값 설정하여 시인성 보장)
+    df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 8
+    df_relation.loc[df_relation["점크기_방문자"] < 8, "점크기_방문자"] = 12
+    
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
     df_relation["점크기_예산"] = df_relation["예산(백만원)"] / 100
     df_relation.loc[df_relation["점크기_예산"] < 5, "점크기_예산"] = 8
     
     # ------------------------------------------
-    # 차트 1번: 상권별로 하나의 대표 데이터 평균값만 노출 (가독성 극대화)
+    # 차트 1번: 임대료 변화율 x 공실률 변화 (상권명 기준 고유 표출)
     # ------------------------------------------
-    st.subheader("📊 차트 1: 상권 유형별 평균 임대료 변화율 × 평균 공실률 변화 매트릭스")
-    st.markdown("축제 상권(실험군)과 일반 상권(대조군)의 전체 평균값을 도출하여 단 두 개의 대표 포인트로 직관적인 비교를 제공합니다.")
+    st.subheader("📊 차트 1: 개별 상권명별 임대료 변화율 × 공실률 변화 사분면 매트릭스")
+    st.markdown("X축(임대료 변화율)과 Y축(공실률 변화량)에 따른 각 **상권명** 권역별 고유 분포를 나타냅니다.")
     
-    # 상권유형별 대표 데이터 평균 계산
-    df_chart1 = df_relation.groupby("상권구분").agg({
-        "임대료변화율": "mean",
-        "공실률변화량": "mean",
-        "외부방문자유입": "mean"
-    }).reset_index()
-    
-    # 소수 셋째자리 버림 적용
-    df_chart1["임대료변화율"] = df_chart1["임대료변화율"].apply(trunc_to_2_decimals)
-    df_chart1["공실률변화량"] = df_chart1["공실률변화량"].apply(trunc_to_2_decimals)
-    df_chart1["외부방문자유입"] = df_chart1["외부방문자유입"].apply(trunc_to_2_decimals)
-    
-    # 가독성을 위해 두 마커 모두 동일하게 크고 명확하게 설정
-    df_chart1["마커크기"] = 35
-    
-    xmax = df_chart1["임대료변화율"].max()
-    xmin = df_chart1["임대료변화율"].min()
-    ymax = df_chart1["공실률변화량"].max()
-    ymin = df_chart1["공실률변화량"].min()
+    xmax = df_relation["임대료변화율"].max()
+    xmin = df_relation["임대료변화율"].min()
+    ymax = df_relation["공실률변화량"].max()
+    ymin = df_relation["공실률변화량"].min()
     
     fig1 = px.scatter(
-        df_chart1,
+        df_relation,
         x="임대료변화율",
         y="공실률변화량",
-        size="마커크기",
+        size="점크기_방문자",
         color="상권구분",
-        text="상권구분",
+        text=reg_col_vac,  # 마커 텍스트로 '상권명' 출력
+        hover_name=reg_col_vac,
         hover_data={
             "임대료변화율": ":.2f%",
             "공실률변화량": ":.2fp.p.",
             "외부방문자유입": ":.2f%",
-            "마커크기": False
+            "점크기_방문자": False
         },
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
             "일반 상권 (대조군)": "#1F77B4"
         },
         labels={
-            "임대료변화율": "평균 임대료 변화율 (%)",
-            "공실률변화량": "평균 공실률 변화량 (p.p.)",
-            "외부방문자유입": "평균 외부방문자 유입 (%)",
+            "임대료변화율": f"임대료 변화율 (% / {first_q} ➔ {last_q})",
+            "공실률변화량": f"공실률 변화량 (p.p. / {first_q} ➔ {last_q})",
             "상권구분": "상권 유형"
         },
         template="plotly_white"
     )
     
-    # 마커 위에 위치할 라벨 텍스트 폰트 크기 증대 및 마커 테두리 강조
+    # 텍스트 오프셋 조정 및 시인성 극대화
     fig1.update_traces(
         textposition='top center',
-        marker=dict(opacity=0.9, line=dict(width=2, color='DarkSlateGrey')),
-        textfont=dict(size=14, color='black', family="Arial Black")
+        marker=dict(opacity=0.85, line=dict(width=1.5, color='DarkSlateGrey')),
+        textfont=dict(size=12, color='black', family="Arial Black")
     )
     
     fig1.add_hline(y=0, line_dash="dash", line_color="#C0C0C0")
     fig1.add_vline(x=0, line_dash="dash", line_color="#C0C0C0")
     
-    # 포인트가 여백 밖으로 짤리지 않도록 적절한 축 범위 수동 여백 지정
-    x_pad = max(abs(xmax), abs(xmin), 1.0) * 0.4
-    y_pad = max(abs(ymax), abs(ymin), 1.0) * 0.4
+    # 사분면 라벨 보정
+    fig1.add_annotation(x=xmax * 0.7 if xmax > 0 else 1.0, y=ymax * 0.7 if ymax > 0 else 1.0, text="🔴 위험 (젠트리피케이션 압력)", showarrow=False, font=dict(color="#FF4B4B", size=10))
+    fig1.add_annotation(x=xmin * 0.7 if xmin < 0 else -1.0, y=ymax * 0.7 if ymax > 0 else 1.0, text="🟡 침체 (임대하락/공실상승)", showarrow=False, font=dict(color="#D62728", size=10))
+    fig1.add_annotation(x=xmax * 0.7 if xmax > 0 else 1.0, y=ymin * 0.7 if ymin < 0 else -1.0, text="🟢 성장 (임대상승/공실안정)", showarrow=False, font=dict(color="#2CA02C", size=10))
+    fig1.add_annotation(x=xmin * 0.7 if xmin < 0 else -1.0, y=ymin * 0.7 if ymin < 0 else -1.0, text="🔵 안정 (둔화/정체)", showarrow=False, font=dict(color="#1F77B4", size=10))
+    
+    # 텍스트 가독성 확보 마진
+    x_pad = max(abs(xmax), abs(xmin), 1.0) * 0.3
+    y_pad = max(abs(ymax), abs(ymin), 1.0) * 0.3
     fig1.update_xaxes(range=[xmin - x_pad, xmax + x_pad])
     fig1.update_yaxes(range=[ymin - y_pad, ymax + y_pad])
     
@@ -698,8 +686,8 @@ def render_page2():
     st.subheader("📈 차트 3: 축제 유무에 따른 분기별 임대료 및 공실률 실시간 추이")
     st.write("시간의 흐름에 따라 축제 상권(실험군)과 일반 상권(대조군)의 부동산 변수가 어떻게 벌어지는지 추적합니다.")
     
-    m_vac_full, r_v_col = melt_quarters(df_vac, "공실률")
-    m_rent_full, r_r_col = melt_quarters(df_rent, "임대료")
+    m_vac_full, r_v_col = melt_quarters(df_vac, "공실률", region_col=reg_col_vac)
+    m_rent_full, r_r_col = melt_quarters(df_rent, "임대료", region_col=reg_col_rent)
     
     m_vac_full["매칭키"] = m_vac_full[r_v_col].apply(extract_city_core)
     m_rent_full["매칭키"] = m_rent_full[r_r_col].apply(extract_city_core)
