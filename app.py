@@ -265,11 +265,11 @@ def pivot_festival_data(df_fest):
 def get_fallback_festival():
     return pd.DataFrame({
         "축제명": ["순창장류축제", "한산모시문화제", "임실N치즈축제", "고령대가야축제", "천안흥타령축제", "탐라문화제", "정선아리랑제", "춘천마임축제"],
+        "개최년도": [2024, 2024, 2024, 2024, 2024, 2024, 2024, 2024],
         "현지인방문자 유입": [0.520, 0.490, 0.900, 0.855, 0.700, 0.800, 0.620, 0.480],
         "외부방문자 유입": [0.830, 0.991, 0.850, 0.892, 0.795, 0.701, 0.515, 0.405],
         "관광소비": [0.522, 0.488, 0.899, 0.852, 0.700, 0.801, 0.615, 0.524],
-        "축제지 집중률": [0.720, 0.350, 0.890, 0.620, 0.450, 0.510, 0.820, 0.395],
-        "개최년도": [2024, 2024, 2024, 2024, 2024, 2024, 2024, 2024],
+        "축제지 집중률": [0.395, 0.450, 0.850, 0.720, 0.610, 0.550, 0.380, 0.395],
         "평가지표": [85, 78, 92, 95, 88, 91, 70, 65],
         "지자체": ["전북", "충남", "전북", "경북", "충남", "제주", "강원", "강원"]
     })
@@ -346,7 +346,7 @@ def get_fallback_extinction():
 # ==========================================
 def render_page1():
     st.title("🎪 지역 축제 관광 유형 및 소비 패턴 분석")
-    st.markdown("축제 지표를 사분면 모델로 입증하고, 시계열 업종 소비 변화를 나란히 대조하여 분석합니다.")
+    st.markdown("축제 지표를 사분면 모델로 입증하고, 시계열 업종 소비 변화를 나란히 대조하여 분석합니다. (사분면 모델은 **2024년도** 기준 수치를 반영합니다.)")
     
     df_raw, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
     df_consume, is_c_mock = load_table_safely("업종별소비액", get_fallback_consume)
@@ -363,13 +363,13 @@ def render_page1():
         st.error("지표 피벗 연산에 실패했습니다. DB 내 지표 구성을 검토하십시오.")
         return
         
-    # [요구사항 반영] 차트 1번은 오직 2024년도 데이터만 사용하도록 고정 필터링 적용
-    year_col = find_col(df_fest.columns, ["개최년도", "연도", "년도"])
-    if year_col:
-        df_fest = df_fest[df_fest[year_col].astype(str).str.contains("2024|24", na=False)].copy()
+    # [요구사항 반영] 2024년도 데이터만 필터링
+    year_col_fest = find_col(df_fest.columns, ["개최년도", "연도", "년도"])
+    if year_col_fest and year_col_fest in df_fest.columns:
+        df_fest = df_fest[df_fest[year_col_fest].astype(str).str.contains("2024", na=False)].copy()
         
     if df_fest.empty:
-        st.error("2024년도 유효 데이터가 존재하지 않습니다. DB 연도 스키마를 다시 확인하십시오.")
+        st.warning("⚠️ 2024년도 축제 데이터가 존재하지 않습니다. 데이터를 확인해주세요.")
         return
         
     col1, col2 = st.columns(2)
@@ -381,6 +381,7 @@ def render_page1():
         fest_name_col = df_fest.columns[0]
         foreign_col = find_col(df_fest.columns, ["외부방문자", "외부"]) or df_fest.columns[2]
         local_col = find_col(df_fest.columns, ["관광소비", "소비"])
+        size_col = find_col(df_fest.columns, ["축제지 집중률", "집중률", "평가지표"])
         
         if not local_col:
             local_col = find_col(df_fest.columns, ["현지인방문자", "현지인"]) or df_fest.columns[1]
@@ -392,6 +393,18 @@ def render_page1():
             df_fest[foreign_col] = df_fest[foreign_col] * 100
         if df_fest[local_col].max() <= 1.0:
             df_fest[local_col] = df_fest[local_col] * 100
+            
+        # [요구사항 반영] 축제지 집중률 스케일 조정 및 크기 맵핑
+        if size_col:
+            df_fest[size_col] = pd.to_numeric(df_fest[size_col], errors='coerce').fillna(0)
+            if df_fest[size_col].max() <= 1.0:
+                df_fest[size_col] = df_fest[size_col] * 100
+            
+            # 버블 시각화 크기 조정 컬럼 생성
+            df_fest["점크기_집중률"] = df_fest[size_col] * 0.8
+            df_fest.loc[df_fest["점크기_집중률"] < 8, "점크기_집중률"] = 12
+        else:
+            df_fest["점크기_집중률"] = 15
             
         def classify_cluster(row):
             x = row[foreign_col]
@@ -405,22 +418,8 @@ def render_page1():
                 
         df_fest["관광유형"] = df_fest.apply(classify_cluster, axis=1)
         
-        # [요구사항 반영] 점 크기를 '축제지 집중률' 변수와 정비례 연동
-        concentration_col = find_col(df_fest.columns, ["축제지 집중률", "집중률"])
-        if not concentration_col:
-            # 예비 컬럼 생성하여 오류 방지
-            df_fest["축제지 집중률"] = 40.0
-            concentration_col = "축제지 집중률"
-            
-        df_fest[concentration_col] = pd.to_numeric(df_fest[concentration_col], errors='coerce').fillna(0)
-        if df_fest[concentration_col].max() <= 1.0:
-            df_fest[concentration_col] = df_fest[concentration_col] * 100
-            
-        # [과장 및 한계선 제어] 크기 왜곡을 주되, 최소 지름 15와 최대 지름 65 사이로 가둬 튀어나감 방지
-        df_fest["점크기_집중률"] = df_fest[concentration_col].apply(lambda x: max(x, 15.0))
-        
-        # 외부방문자 유입량이 큰 주력 축제를 우선적으로 배치하여 라벨 보존
-        df_fest = df_fest.sort_values(by=foreign_col, ascending=False).copy()
+        # [겹침 방지 알고리즘] 점의 크기(점크기_집중률) 기준으로 정렬하여 큰 축제명을 우선적 배치
+        df_fest = df_fest.sort_values(by="점크기_집중률", ascending=False).copy()
         df_fest["차트라벨"] = df_fest[fest_name_col].astype(str)
         
         # 정규화 범위 계산
@@ -444,37 +443,39 @@ def render_page1():
                     break
                     
             if is_overlapping:
-                # 겹치므로 상대적으로 방문자 유입이 더 작은 이 축제 라벨을 숨김
+                # 겹치므로 집중률이 상대적으로 더 낮은 이 축제 라벨을 숨김
                 df_fest.at[idx, "차트라벨"] = ""
             else:
                 active_coords.append((rx, ry))
                 
+        # Hover 데이터 구성
+        hover_dict = {
+            foreign_col: ":.2f%",
+            local_col: ":.2f%",
+            "관광유형": True,
+            "차트라벨": False
+        }
+        if size_col:
+            hover_dict[size_col] = ":.2f%"
+            
         fig1 = px.scatter(
             df_fest,
             x=foreign_col,
             y=local_col,
+            size="점크기_집중률",  # [요구사항 반영] 집중률 점 크기 이식
             color="관광유형",
-            size="점크기_집중률",  # [요구사항 반영] 점 크기를 축제지 집중률 지표에 대응
-            size_max=55,         # [요구사항 반영] 시각적으로 큼직하게 강조하면서 외곽 이탈은 안전하게 차단
-            text="차트라벨",      # 겹침 방지가 필터링된 라벨 적용
+            text="차트라벨",  # 겹침 방지가 필터링된 라벨 적용
             color_discrete_map={
                 "당일치기형": "#E07A5F",
                 "체류형": "#3D9A7A",
                 "외부유입 낮음": "#5F9EE0"
             },
             hover_name=fest_name_col,  # 호버 툴팁에는 전체 축제명 정상 표출
-            hover_data={
-                foreign_col: ":.2f%",
-                local_col: ":.2f%",
-                concentration_col: ":.2f%",  # 호버 데이터에 정밀 축제지 집중률 수치 노출
-                "관광유형": True,
-                "점크기_집중률": False,
-                "차트라벨": False
-            },
+            hover_data=hover_dict,
             labels={
                 foreign_col: "외부방문자 유입률 (%)", 
                 local_col: "관광소비 지수 (%) (대체 적용됨)",
-                concentration_col: "축제지 집중률 (%)"
+                size_col: "축제지 집중률 (%)" if size_col else "지집중률"
             },
             template="plotly_white"
         )
@@ -484,14 +485,14 @@ def render_page1():
         
         # [가독성 향상] 라벨 크기 축소 (9.5) 및 차분한 색상 적용
         fig1.update_traces(
-            marker=dict(opacity=0.85, line=dict(width=1.5, color='DarkSlateGrey')),
             textposition='top center',
-            textfont=dict(size=9.5, color='#333333', family="Arial")
+            textfont=dict(size=9.5, color='#333333', family="Arial"),
+            marker=dict(opacity=0.85, line=dict(width=1.5, color='DarkSlateGrey'))
         )
         
-        # 라벨 잘림 방지를 위한 축 여백 패딩 조정 (size_max가 크므로 22% 정도로 보수적인 마진 할당)
-        x_pad = max(abs(xmax), abs(xmin), 1.0) * 0.22
-        y_pad = max(abs(ymax), abs(ymin), 1.0) * 0.22
+        # 라벨 잘림 방지를 위한 축 여백 패딩 조정 (점을 사분면 내에 안정적으로 배치)
+        x_pad = max(abs(xmax), abs(xmin), 1.0) * 0.15
+        y_pad = max(abs(ymax), abs(ymin), 1.0) * 0.15
         fig1.update_xaxes(range=[xmin - x_pad, xmax + x_pad])
         fig1.update_yaxes(range=[ymin - y_pad, ymax + y_pad])
         
@@ -500,11 +501,11 @@ def render_page1():
     # 2) 연도별 소비 트렌드 꺾은선을 우측(col2)으로 전면 배치
     with col2:
         st.subheader("📈 연도별 업종 소비 흐름 (꺾은선)")
-        year_col_consume = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0]
-        other_cols = [c for c in df_consume.columns if c != year_col_consume]
+        year_col = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0]
+        other_cols = [c for c in df_consume.columns if c != year_col]
         
         df_melted_consume = df_consume.melt(
-            id_vars=[year_col_consume],
+            id_vars=[year_col],
             value_vars=other_cols,
             var_name="소비업종",
             value_name="소비액"
@@ -517,19 +518,19 @@ def render_page1():
             
         df_melted_consume["소비액"] = pd.to_numeric(df_melted_consume["소비액"], errors='coerce').fillna(0)
         
-        df_sub = df_melted_consume[[year_col_consume, "소비업종", "소비액"]].copy()
+        df_sub = df_melted_consume[[year_col, "소비업종", "소비액"]].copy()
         df_sub.columns = ["_temp_year", "_temp_sector", "_temp_amount"]
         df_trend = df_sub.groupby(["_temp_year", "_temp_sector"])["_temp_amount"].sum().reset_index()
-        df_trend.columns = [year_col_consume, "소비업종", "소비액"]
+        df_trend.columns = [year_col, "소비업종", "소비액"]
         
         fig2 = px.line(
             df_trend,
-            x=year_col_consume,
+            x=year_col,
             y="소비액",
             color="소비업종",
             markers=True,
             title="연도별 업종 총 소비액 변동 추이",
-            labels={year_col_consume: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"},
+            labels={year_col: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"},
             template="plotly_white"
         )
         st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_side")
