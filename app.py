@@ -97,7 +97,7 @@ def find_col(columns, search_terms):
         for col in columns:
             clean_col = str(col).replace(" ", "").replace("·", "").replace("_", "").lower()
             clean_term = str(term).replace(" ", "").replace("·", "").replace("_", "").lower()
-            if clean_term in clean_col:
+            if clean_term in col:
                 return col
     return None
 
@@ -518,7 +518,7 @@ def render_page1():
     with row0_col_insight:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.subheader("💡 분석 인사이트")
-        st.info("체감 BSI는 코로나 이후 반등 구간(2022년 4-5월, 약 76)을 제외하면 줄곧 50-65대에 갇혀 있습니다. 전망 BSI와의 격차는 평균 약 20p 이상 벌어진 채로 고착화됩니다.")
+        st.info("체감 BSI는 코로나 이후 반등 구간(2022년 4~5월, 약 76)을 제외하면 줄곧 50~65대에 갇혀 있습니다. 전망 BSI와의 격차는 평균 약 20p 이상 벌어진 채로 고착화됩니다.")
 
     st.markdown("---")
 
@@ -652,7 +652,7 @@ def render_page1():
             df_trend,
             x=year_col,
             y="소비액",
-            color="소비업종",
+            color="소비종",
             markers=True,
             title="연도별 업종 총 소비액 변동 추이",
             labels={year_col: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"},
@@ -667,11 +667,7 @@ def render_page1():
         st.info("쇼핑업: 23년 급격한 침체 후 24년 미미하게 반등 / 기타 업종: 반등 지점 없이 바닥권 고착")
 
     st.markdown("---")
-    st.info("""
-    **💡 데이터 분석 결과 보고**
-    
-    데이터 분석 결과, 다른 소비 카테고리에 비해 '숙박업 소비액'의 비중이 낮게 분포하는 특성이 나타납니다. 이는 다수의 방문객들이 목적지에 체류하기보다는 단기 '당일치기 관광'을 주로 소비하고 있음을 시사합니다. 향후 실질적인 지방 관광 활성화와 상권 유치를 위해서는 체류 기반 프로그램을 확장할 필요성이 제기됩니다.
-    """)
+    # [수정] 페이지 1 데이터 분석 결과 보고 제거 요청 반영
 
 
 # ==========================================
@@ -992,7 +988,7 @@ def render_page2():
         )
         st.plotly_chart(fig_v_trend, use_container_width=True)
 
-    # [수정] 차트 3번 바로 아래 분석 인사이트 영역 반영
+    # [수정] 차트 3번 바로 아래 분석 인사이트 반영
     st.info("💡 **차트 3 분석 인사이트**\n\n축제 상권은 인위적 유치 기대 심리로 인해 임대료 하락을 방어해 냅니다. 이로 인해 신규 소상공인의 진입 장벽만 더욱 완고해져 빈 점포가 양산됩니다.")
     st.markdown("---")
 
@@ -1055,10 +1051,7 @@ def render_page2():
     st.info("💡 **차트 4 분석 인사이트**\n\n지방소멸문제에 대한 공무원 위기감은 심각한 수준이지만 이에 대한 대응은 축제만 증가시킬 뿐 실질적인 효과가 없음을 데이터상으로 포착했습니다.")
     st.markdown("---")
     
-    st.markdown("""
-    **📋 상권 분석 요약**
-    * **시계열 추적**: 차트 3의 추이를 통하여, 축제 활성화 구역과 일반 통제 구역 사이에서 시간에 따라 나타나는 상권 변동의 편차를 통계적으로 모니터링할 수 있습니다.
-    """)
+    # [수정] 상권 분석 요약 제거 요청 반영
 
 
 # ==========================================
@@ -1161,7 +1154,7 @@ def render_page3():
         
     st.markdown("---")
     
-    # [수정] 세금 효율성 분석, 지방 관광 대체 효과 제거 후 '세금 ROI 진단: 투입 재정 대비 유입 효율 평가 (TAX ROI)' 추가 [1]
+    # 세금 ROI 진단: 투입 재정 대비 유입 효율 평가 (TAX ROI) 추가
     st.subheader("💸 세금 ROI 진단: 투입 재정 대비 유입 효율 평가 (TAX ROI)")
     
     st.info("""
