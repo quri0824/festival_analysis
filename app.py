@@ -664,9 +664,10 @@ def render_page2():
         
     df_relation["상권구분"] = df_relation.apply(check_is_experimental, axis=1)
     
-    # 버블 크기 계산: 외부방문자 유입 * 100 공식 적용 (안정적인 시각화를 위한 기본값 8 보완)
+    # 버블 크기 계산: 대조 상권은 작게(4), 실험군은 축제 유입 규모에 비례(최소 12)하게 세팅하여 대비 극대화
     df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 100
-    df_relation.loc[df_relation["점크기_방문자"] < 8, "점크기_방문자"] = 8
+    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "점크기_방문자"] = 4
+    df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["점크기_방문자"] < 12), "점크기_방문자"] = 12
     
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
     df_relation["점크기_예산"] = df_relation["예산(백만원)"] / 100
@@ -716,7 +717,13 @@ def render_page2():
         annotation_text="임대료 하락 영역 📉", annotation_position="top left"
     )
     
-    fig1.update_traces(textposition='top center')
+    # 상권명이 영역 한계선 밖으로 나가 잘리지 않도록 렌더링 세부 옵션 적용
+    fig1.update_traces(textposition='top center', cliponaxis=False)
+    fig1.update_layout(
+        margin=dict(l=60, r=60, t=50, b=50),  # 좌우 마진 여백을 확장하여 한계 영역 텍스트 보호
+        xaxis=dict(constrain="domain")
+    )
+    
     st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix")
     
     # ------------------------------------------
@@ -743,6 +750,7 @@ def render_page2():
             "예산(백만원)": "지자체 예산 규모 (백만원)",
             "상권구분": "상권 유형"
         },
+        range_x=[-4, 4],  # X축 범위를 -4 ~ 4로 강제 설정
         template="plotly_white"
     )
     fig2.update_layout(margin=dict(l=0, r=0, b=0, t=40))
