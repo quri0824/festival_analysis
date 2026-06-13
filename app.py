@@ -242,8 +242,8 @@ def normalize_festival_data(df, df_cost=None):
                 aggfunc='mean'
             ).reset_index()
             
-            # 소수점 비율 지표를 백분율 단위(%)로 정밀 조정
-            for col in ["외부방문자 유입", "현지인방문자 유입"]:
+            # 비율 데이터(0~1)를 백분율(0~100) 단위로 통일 (축제지 집중률 포함)
+            for col in ["외부방문자 유입", "현지인방문자 유입", "축제지 집중률"]:
                 matched_c = find_col(df_pivoted.columns, [col])
                 if matched_c:
                     df_pivoted[matched_c] = pd.to_numeric(df_pivoted[matched_c], errors='coerce').fillna(0)
@@ -271,7 +271,7 @@ def get_fallback_festival():
         "축제명": ["춘천닭갈비축제", "강경젓갈축제", "지평선축제", "머드축제"],
         "현지인방문자 유입": [32.4, 45.1, 28.7, 15.3],
         "외부방문자 유입": [67.6, 54.9, 71.3, 84.7],
-        "평가지표": [85, 78, 92, 95],
+        "축제지 집중률": [75.4, 58.2, 91.3, 84.5],
         "지자체": ["강원", "충남", "전북", "충남"]
     })
 
@@ -328,9 +328,9 @@ def render_page1():
         
     col1, col2 = st.columns(2)
     
-    # 1) 축제 방문객 유입 비율 차트 (col1)
+    # 1) 축제 방문객 유입 비율 및 축제지 집중률 버블 차트 (col1)
     with col1:
-        st.subheader("📍 축제별 현지인 vs 외부인 비율")
+        st.subheader("📍 축제별 방문객 유입 및 축제지 집중률")
         name_col = find_col(
             df_fest.columns, 
             ["축제명", "행사명", "축제", "이름"]
@@ -338,30 +338,37 @@ def render_page1():
         
         local_col = find_col(df_fest.columns, ["현지인방문자 유입", "현지인"])
         foreign_col = find_col(df_fest.columns, ["외부방문자 유입", "외부방문자"])
+        focus_col = find_col(df_fest.columns, ["축제지 집중률", "집중률"])
+        region_col = find_col(df_fest.columns, ["지자체", "지역"]) or name_col
         
-        if local_col and foreign_col:
+        if local_col and foreign_col and focus_col:
             df_fest[local_col] = pd.to_numeric(df_fest[local_col], errors='coerce').fillna(0)
             df_fest[foreign_col] = pd.to_numeric(df_fest[foreign_col], errors='coerce').fillna(0)
+            df_fest[focus_col] = pd.to_numeric(df_fest[focus_col], errors='coerce').fillna(0)
             
-            df_melted = df_fest.melt(
-                id_vars=[name_col],
-                value_vars=[local_col, foreign_col],
-                var_name="방문객 구분",
-                value_name="비율(%)"
-            )
+            # 버블 최소 크기 및 표출 안전성 보장용 임시 컬럼 생성
+            df_fest["_bubble_size"] = df_fest[focus_col].apply(lambda x: x if x > 0 else 8)
             
-            fig1 = px.bar(
-                df_melted,
-                x=name_col,
-                y="비율(%)",
-                color="방문객 구분",
-                barmode="group",
-                color_discrete_sequence=px.colors.qualitative.Pastel,
+            fig1 = px.scatter(
+                df_fest,
+                x=local_col,
+                y=foreign_col,
+                size="_bubble_size",
+                color=region_col,
+                hover_name=name_col,
+                text=name_col,
+                title="현지인 vs 외부인 유입 수준 및 축제지 집중률 (버블 크기)",
+                labels={
+                    local_col: "현지인 방문자 유입 (%)",
+                    foreign_col: "외부인 방문자 유입 (%)",
+                    "_bubble_size": "축제지 집중률 (%)"
+                },
                 template="plotly_white"
             )
-            st.plotly_chart(fig1, use_container_width=True, key="p1_visit_chart")
+            fig1.update_traces(textposition='top center')
+            st.plotly_chart(fig1, use_container_width=True, key="p1_visit_bubble_chart")
         else:
-            st.write("유입 비중 컬럼 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
+            st.write("분석 필수 항목(현지인 유입, 외부인 유입, 축제지 집중률) 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
             st.dataframe(df_fest.head())
             
     # 2) 시계열 꺾은선 소비 차트 (col2)
