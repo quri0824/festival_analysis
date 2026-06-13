@@ -604,7 +604,7 @@ def render_page1():
     with row1_col_insight:
         st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
         st.subheader("💡 분석 인사이트")
-        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*") [1]
+        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*")
 
     st.markdown("---")
 
@@ -655,7 +655,7 @@ def render_page1():
     with row2_col_insight:
         st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
         st.subheader("💡 분석 인사이트")
-        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*") [1]
+        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*")
 
     st.markdown("---")
     st.info("""
