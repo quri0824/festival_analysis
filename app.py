@@ -164,7 +164,7 @@ def truncate_float(val, decimals=2):
         return val
 
 
-# 가로 형태 데이터를 세로 형태로 변환 (다중 인덱스 보강 지원) [1]
+# 가로 형태 데이터를 세로 형태로 변환 (다중 인덱스 보강 지원)
 def melt_quarters(df, value_name, id_vars=None):
     if df.empty:
         return pd.DataFrame(), None
@@ -229,36 +229,6 @@ def resolve_text_overlaps_2d(df, x_col, y_col):
             positions.append("bottom right")
         elif count == 7:
             positions.append("middle left")
-        else:
-            positions.append("middle right")
-    return positions
-
-
-def resolve_text_overlaps_3d(df, x_col, y_col, z_col):
-    if df.empty:
-        return []
-    positions = []
-    grid = {}
-    for idx, row in df.iterrows():
-        try:
-            x_val = round(float(row[x_col]), 1)
-            y_val = round(float(row[y_col]), 1)
-            z_val = round(float(row[z_col]), -1)  # 예산 단위 10만원 단위로 그리딩
-        except (ValueError, TypeError):
-            x_val, y_val, z_val = 0.0, 0.0, 0.0
-        key = (x_val, y_val, z_val)
-        grid[key] = grid.get(key, 0) + 1
-        count = grid[key]
-        
-        # 3D 마커 겹침 방지 분산 좌표
-        if count == 1:
-            positions.append("top center")
-        elif count == 2:
-            positions.append("bottom center")
-        elif count == 3:
-            positions.append("top right")
-        elif count == 4:
-            positions.append("bottom left")
         else:
             positions.append("middle right")
     return positions
@@ -737,10 +707,10 @@ def render_page2():
         
     df_relation["상권구분"] = df_relation.apply(check_is_experimental, axis=1)
     
-    # 버블 크기 계산: 대조 상권은 작게(10) 키워 가독성 상향, 실험군은 축제 규모에 비례(최소 20)하도록 강화 [1]
+    # 버블 크기 계산: 대조 상권은 점 크기를 더 키워 시각성 향상(16), 실험군은 축제 규모에 비례(최소 26)하게 확대 [1]
     df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 100
-    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "점크기_방문자"] = 10
-    df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["점크기_방문자"] < 20), "점크기_방문자"] = 20
+    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "점크기_방문자"] = 16
+    df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["점크기_방문자"] < 26), "점크기_방문자"] = 26
     
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
     df_relation["점크기_예산"] = df_relation["예산(백만원)"] / 100
@@ -811,9 +781,6 @@ def render_page2():
     st.subheader("🪐 차트 2: 지자체 예산 규모를 통제한 3차원 버블 입체 분석")
     st.write("지자체의 예산 고저를 통제 변수로 두고 축제 개최 여부에 따른 부동산 상권 변동의 정위적 구분을 고찰합니다.")
     
-    # 3D 겹침 방지 알고리즘 적용
-    df_relation["text_pos_3d"] = resolve_text_overlaps_3d(df_relation, "임대료변화율", "공실률변화량", "예산(백만원)")
-    
     fig2 = px.scatter_3d(
         df_relation,
         x="임대료변화율",
@@ -821,7 +788,7 @@ def render_page2():
         z="예산(백만원)",
         size="점크기_예산",
         color="상권구분",
-        text=district_col_vac,  # 상권명 표시
+        # 차트 2에서 상권명 가려짐 및 난잡함을 줄이기 위해 라벨 지움 조치 [1]
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
             "일반 상권 (대조군)": "#1F77B4"
@@ -836,7 +803,6 @@ def render_page2():
         template="plotly_white"
     )
     
-    fig2.update_traces(textposition=df_relation["text_pos_3d"].tolist())
     fig2.update_layout(margin=dict(l=0, r=0, b=0, t=40))
     st.plotly_chart(fig2, use_container_width=True, key="p2_3d_bubble")
 
@@ -846,7 +812,7 @@ def render_page2():
     st.subheader("📈 차트 3: 축제 유무에 따른 분기별 임대료 및 공실률 실시간 추이")
     st.write("시간 흐름의 연장선상에서 두 비교군(실험군 및 대조군)의 주요 상권 지표 추이를 조망합니다.")
     
-    # 세부 상권 고유 코드를 축약하지 않고 다중 인덱스로 멜팅 처리하여 정보 탈락 방지 [1]
+    # 세부 상권 고유 코드를 축약하지 않고 다중 인덱스로 멜팅 처리하여 정보 탈락 방지
     m_vac_full, r_v_col = melt_quarters(df_vac, "공실률", id_vars=[reg_col_vac, district_col_vac])
     m_rent_full, r_r_col = melt_quarters(df_rent, "임대료", id_vars=[reg_col_rent, district_col_rent])
     
