@@ -429,13 +429,7 @@ def render_page1():
     st.title("🎪 지역 축제 현황 및 시계열 소비 패턴")
     st.markdown("축제 지표 데이터 구조를 동적으로 정제하여 시계열 동향을 보다 명확하게 파악합니다.")
     
-    # ------------------------------------------
-    # 0) 월별 소상공인 BSI 수치 꺾은선 차트 (실측 데이터 반영)
-    # ------------------------------------------
-    st.subheader("📊 월별 BSI 수치 꺾은선 차트")
-    st.write("기준선(100)을 중심으로 서울/경기를 제외한 15개 시도 소상공인들의 경기 체감도 및 전망 흐름을 시계열로 비교합니다 [1].")
-
-    # 소상공인 BSI 15개시도 평균 실측 데이터프레임 빌드 [1]
+    # 소상공인 BSI 15개시도 평균 실측 데이터프레임 빌드
     df_bsi = pd.DataFrame({
         "기준날짜": [
             "2022.01", "2022.02", "2022.03", "2022.04", "2022.05", "2022.06",
@@ -465,7 +459,7 @@ def render_page1():
 
     fig_bsi = go.Figure()
 
-    # 체감 BSI: 빨간 실선 [1]
+    # 체감 BSI: 빨간 실선
     fig_bsi.add_trace(go.Scatter(
         x=df_bsi["기준날짜"],
         y=df_bsi["체감 BSI"],
@@ -475,7 +469,7 @@ def render_page1():
         marker=dict(size=6)
     ))
 
-    # 전망 BSI: 파란 점선 [1]
+    # 전망 BSI: 파란 점선
     fig_bsi.add_trace(go.Scatter(
         x=df_bsi["기준날짜"],
         y=df_bsi["전망 BSI"],
@@ -485,35 +479,50 @@ def render_page1():
         marker=dict(size=6)
     ))
 
-    # 홀수 월 축 레이블 구성 리스트 [1]
+    # 홀수 월 축 레이블 구성 리스트
     odd_months = [
         "2022.01", "2022.03", "2022.05", "2022.07", "2022.09", "2022.11",
         "2023.01", "2023.03", "2023.05", "2023.07", "2023.09", "2023.11",
         "2024.01", "2024.03", "2024.05", "2024.07", "2024.09", "2024.11"
     ]
 
-    # 레이아웃 구성 및 축범위(30~110) 지정 [1]
+    # 레이아웃 구성 및 축범위(30~110) 지정
     fig_bsi.update_layout(
         xaxis_title="기준날짜(월별)",
         yaxis_title="평균 BSI",
-        yaxis=dict(range=[30, 110]), # Y축 범위 설정 [1]
+        yaxis=dict(range=[30, 110]), # Y축 범위 설정
         xaxis=dict(
             tickmode="array",
-            tickvals=odd_months,      # 홀수인 월만 축에 눈금 표시 [1]
+            tickvals=odd_months,      # 홀수인 월만 축에 눈금 표시
             ticktext=odd_months
         ),
-        hovermode="x unified",  # 마우스 오버 시 단일 팝업창에 기준날짜, 체감 BSI, 전망 BSI 전체 표시 [1]
+        hovermode="x unified",  # 마우스 오버 시 단일 팝업창에 기준날짜, 체감 BSI, 전망 BSI 전체 표시
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
-    # 수평 기준선 100 추가 [1]
+    # 수평 기준선 100 추가
     fig_bsi.add_hline(y=100, line_width=1.5, line_dash="dash", line_color="gray", annotation_text="기준선 (100)", annotation_position="top left")
 
-    st.plotly_chart(fig_bsi, use_container_width=True, key="p1_bsi_line_chart")
+    # ------------------------------------------
+    # 0) 월별 BSI 수치 꺾은선 차트 및 인사이트 배치 (Row 0)
+    # ------------------------------------------
+    row0_col_chart, row0_col_insight = st.columns([3, 1])
+
+    with row0_col_chart:
+        st.subheader("📊 월별 BSI 수치 꺾은선 차트")
+        st.write("기준선(100)을 중심으로 서울/경기를 제외한 15개 시도 소상공인들의 경기 체감도 및 전망 흐름을 시계열로 비교합니다.")
+        st.plotly_chart(fig_bsi, use_container_width=True, key="p1_bsi_line_chart")
+
+    # 차트 1(BSI 차트) 인사이트 문구 추가
+    with row0_col_insight:
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.subheader("💡 분석 인사이트")
+        st.info("체감 BSI는 코로나 이후 반등 구간(2022년 4~5월, 약 76)을 제외하면 줄곧 50~65대에 갇혀 있습니다. 전망 BSI와의 격차는 평균 약 20p 이상 벌어진 채로 고착화됩니다.")
+
     st.markdown("---")
 
-    # 기존 1), 2) 차트 데이터 로드 및 정형화
+    # 기존 축제 및 소비 추이 차트 데이터 로드 및 정형화
     df_fest, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
     df_fest = normalize_festival_data(df_fest)
     df_consume, is_c_mock = load_table_safely("업종별소비액", get_fallback_consume)
@@ -522,9 +531,9 @@ def render_page1():
         st.sidebar.warning("⚠️ 일부 원본 데이터 누락으로 예비 시뮬레이션 데이터를 함께 활용 중입니다.")
 
     # ------------------------------------------
-    # 1) 축제 유형 분석 세로 정렬 및 인사이트 박스 배치
+    # 1) 축제 유형 분석 세로 정렬 및 인사이트 박스 배치 (Row 1)
     # ------------------------------------------
-    row1_col_chart, row1_col_insight = st.columns([3, 1]) # 가로 비 분할 (차트 3 : 인사이트 1) [1]
+    row1_col_chart, row1_col_insight = st.columns([3, 1]) # 가로 비 분할 (차트 3 : 인사이트 1)
 
     with row1_col_chart:
         st.subheader("📍 축제 유형 분석 (외부방문자 유입률 × 관광소비)")
@@ -600,18 +609,18 @@ def render_page1():
             st.write("분석 필수 항목(관광소비, 외부인 유입, 축제지 집중률) 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
             st.dataframe(df_fest.head())
 
-    # 축제 유형 분석용 인사이트 전용 박스 배치 (공백 보완) [1]
+    # 차트 2(축제 유형 분석) 인사이트 문구 반영
     with row1_col_insight:
-        st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
+        st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진
         st.subheader("💡 분석 인사이트")
-        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*")
+        st.info("외부 유입 65% 돌파 후 축제는 '소비 극대화(임실·고령)'와 '유입 착시(한산·순창)'로 양극화됩니다. 단, 두 유형 모두 축제지 집중률(점 크기)이 비대하여 축제장 밖 기존 골목 상권으로의 낙수효과는 철저히 차단되어 있습니다.")
 
     st.markdown("---")
 
     # ------------------------------------------
-    # 2) 연도별 업종 소비 흐름 세로 정렬 및 인사이트 박스 배치
+    # 2) 연도별 업종 소비 흐름 세로 정렬 및 인사이트 박스 배치 (Row 2)
     # ------------------------------------------
-    row2_col_chart, row2_col_insight = st.columns([3, 1]) # 가로 비 분할 (차트 3 : 인사이트 1) [1]
+    row2_col_chart, row2_col_insight = st.columns([3, 1]) # 가로 비 분할 (차트 3 : 인사이트 1)
 
     with row2_col_chart:
         st.subheader("📈 연도별 업종 소비 흐름 (꺾은선)")
@@ -651,11 +660,11 @@ def render_page1():
         )
         st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
-    # 연도별 업종 소비 흐름용 인사이트 전용 박스 배치 (공백 보존) [1]
+    # 차트 3(소비 흐름) 인사이트 문구 반영
     with row2_col_insight:
-        st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
+        st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진
         st.subheader("💡 분석 인사이트")
-        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*")
+        st.info("쇼핑업: 23년 급격한 침체 후 24년 미미하게 반등 / 기타 업종: 반등 지점 없이 바닥권 고착")
 
     st.markdown("---")
     st.info("""
@@ -883,8 +892,7 @@ def render_page2():
     
     st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix")
     
-    # [수정] 차트 1번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
-    st.info("💡 **차트 1 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
+    # [수정] 차트 1 인사이트 제거 요청 반영
     st.markdown("---")
 
     # ------------------------------------------
@@ -918,8 +926,7 @@ def render_page2():
     fig2.update_layout(margin=dict(l=0, r=0, b=0, t=40))
     st.plotly_chart(fig2, use_container_width=True, key="p2_3d_bubble")
 
-    # [수정] 차트 2번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
-    st.info("💡 **차트 2 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
+    # [수정] 차트 2 인사이트 제거 요청 반영
     st.markdown("---")
 
     # ------------------------------------------
@@ -985,8 +992,8 @@ def render_page2():
         )
         st.plotly_chart(fig_v_trend, use_container_width=True)
 
-    # [수정] 차트 3번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
-    st.info("💡 **차트 3 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
+    # [수정] 차트 3번 바로 아래 분석 인사이트 영역 반영
+    st.info("💡 **차트 3 분석 인사이트**\n\n축제 상권은 인위적 유치 기대 심리로 인해 임대료 하락을 방어해 냅니다. 이로 인해 신규 소상공인의 진입 장벽만 더욱 완고해져 빈 점포가 양산됩니다.")
     st.markdown("---")
 
     # ------------------------------------------
@@ -1044,8 +1051,8 @@ def render_page2():
     fig4.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig4, use_container_width=True, key="p2_survey_bar_chart")
 
-    # [수정] 차트 4번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
-    st.info("💡 **차트 4 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
+    # [수정] 차트 4번 바로 아래 분석 인사이트 영역 반영
+    st.info("💡 **차트 4 분석 인사이트**\n\n지방소멸문제에 대한 공무원 위기감은 심각한 수준이지만 이에 대한 대응은 축제만 증가시킬 뿐 실질적인 효과가 없음을 데이터상으로 포착했습니다.")
     st.markdown("---")
     
     st.markdown("""
@@ -1153,19 +1160,16 @@ def render_page3():
         st.write("진단 데이터의 충분한 확보를 대기하고 있어 효율성 차트 구성을 임시 생략합니다.")
         
     st.markdown("---")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("### 📉 세금 효율성 분석")
-        st.markdown("""
-        * **자원 배분 관점**: 효율성 ROI 지수가 높은 축제 및 행사는 상대적으로 제한된 공적 적자 내에서 많은 외부 유입 성과를 거두었음을 알 수 있습니다.
-        * **예산 구조 개선**: 성과 지표가 낮게 누적되는 비효율 사업 예산을 점검하고 우수 축제 지원군으로 재배분하는 재정적 점검 전략을 모색할 수 있습니다.
-        """)
-    with col2:
-        st.write("### ✈️ 지방 관광 대체 효과")
-        st.markdown("""
-        * **관광 수요 흡수**: 지역적 축제 예산 지원을 통하여 해외나 타 상권으로 유출될 수 있는 내수 관광 수요를 관내로 순환시키는 마중물 효과를 유도합니다.
-        * **인구 소멸 예방**: 정주 인구가 부족해지는 소도시 거점에 외부 생활인구를 반복적으로 유입시킴으로써 지역 내 단기 활력을 견인하는 공공 가치가 존재합니다.
-        """)
+    
+    # [수정] 세금 효율성 분석, 지방 관광 대체 효과 제거 후 '세금 ROI 진단: 투입 재정 대비 유입 효율 평가 (TAX ROI)' 추가 [1]
+    st.subheader("💸 세금 ROI 진단: 투입 재정 대비 유입 효율 평가 (TAX ROI)")
+    
+    st.info("""
+    * **세금 집행 타당성 평가 평가지표 산출식** : `Tax ROI Index = 외부인 관광 유입 수 / 순원가(세금 투입)`
+    * **고효율 포지션** : 적은 적자 규모에도 독자적 브랜드 가치를 통해 타 권역 전파력이 높은 축제
+    * **저효율 적자 포지션** : 매년 수십억 세금을 투입하나 외지인의 실질적 방문/소비로 연결되지 않는 부실 축제
+    * **정책 제언** : 효율이 증명되지 않은 부실 축제에 정부 예산을 N분의 1로 나누는 것은 전형적인 행정 낭비
+    """)
 
 
 # ==========================================
