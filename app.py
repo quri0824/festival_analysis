@@ -707,12 +707,12 @@ def render_page2():
         
     df_relation["상권구분"] = df_relation.apply(check_is_experimental, axis=1)
     
-    # 버블 크기 계산: 대조 상권은 점 크기를 더 키워 시각성 향상(16), 실험군은 축제 규모에 비례(최소 26)하게 확대
+    # 버블 크기 계산: 일반(대조) 상권 점 크기를 축제상권보다 시각적으로 확실히 작게 설정 (대조군 8, 실험군 26 이상) [1]
     df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 100
-    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "점크기_방문자"] = 16
+    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "점크기_방문자"] = 8
     df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["점크기_방문자"] < 26), "점크기_방문자"] = 26
     
-    # 지자체 예산 규모 (버블 크기 및 산식) 원래대로 복원 (예산 / 100 및 하한값 보완) [1]
+    # 지자체 예산 규모 (버블 크기 및 산식) 원래대로 복원 (예산 / 100 및 하한값 보안)
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
     df_relation["점크기_예산"] = df_relation["예산(백만원)"] / 100
     df_relation.loc[df_relation["점크기_예산"] < 5, "점크기_예산"] = 8
@@ -789,7 +789,7 @@ def render_page2():
         z="예산(백만원)",
         size="점크기_예산",
         color="상권구분",
-        # 차트 2에서 상권명 가려짐 및 난잡함을 줄이기 위해 라벨 지움 조치 유지
+        hover_name=district_col_vac,  # 마우스 오버(호버) 툴팁 상단에 상권명이 나타나도록 지정 [1]
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
             "일반 상권 (대조군)": "#1F77B4"
