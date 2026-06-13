@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
 
 # ==========================================
 # 0. 앱 기본 설정 및 예외 처리
@@ -422,12 +423,69 @@ def get_fallback_cost():
 
 
 # ==========================================
-# 1. 페이지 1: 축제 현황 및 업종별 누적 소비 구조
+# 1. 페이지 1: 월별 BSI 수치 및 축제 분석
 # ==========================================
 def render_page1():
     st.title("🎪 지역 축제 현황 및 시계열 소비 패턴")
-    st.markdown("축제 지표 데이터 구조를 동적으로 정제하여 시계열 동향을 보다 명확하게 파악합니다.")
+    st.markdown("축제 지표 데이터 구조를 동적으로 정제하여 소비 트렌드 및 기업 경기 동향을 복합 고찰합니다.")
     
+    # ------------------------------------------
+    # [추가] 0) 월별 BSI 수치 꺾은선 차트 (차트 1번 앞에 배치) [1]
+    # ------------------------------------------
+    st.subheader("📊 월별 BSI 수치 꺾은선 차트")
+    st.write("기준선(100)을 중심으로 기업 경기 동향의 체감 실적과 전망 흐름을 관측합니다 [1].")
+
+    # BSI 지표 데이터 정의
+    df_bsi = pd.DataFrame({
+        "기준날짜": ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"],
+        "체감 BSI": [74, 72, 78, 81, 85, 89, 83, 80, 84, 88, 85, 91],
+        "전망 BSI": [78, 76, 82, 85, 89, 93, 87, 83, 88, 92, 89, 95]
+    })
+
+    fig_bsi = go.Figure()
+
+    # 체감 BSI: 빨간 실선 [1]
+    fig_bsi.add_trace(go.Scatter(
+        x=df_bsi["기준날짜"],
+        y=df_bsi["체감 BSI"],
+        mode="lines+markers",
+        name="체감 BSI",
+        line=dict(color="red", width=2.5),
+        marker=dict(size=6)
+    ))
+
+    # 전망 BSI: 파란 점선 [1]
+    fig_bsi.add_trace(go.Scatter(
+        x=df_bsi["기준날짜"],
+        y=df_bsi["전망 BSI"],
+        mode="lines+markers",
+        name="전망 BSI",
+        line=dict(color="blue", width=2.5, dash="dash"),
+        marker=dict(size=6)
+    ))
+
+    # 레이아웃 구성 및 축범위(30~110) 지정 [1]
+    fig_bsi.update_layout(
+        xaxis_title="기준날짜(월별)",
+        yaxis_title="평균 BSI",
+        yaxis=dict(range=[30, 110]), # Y축 범위 설정 [1]
+        xaxis=dict(
+            tickmode="array",
+            tickvals=["1월", "3월", "5월", "7월", "9월", "11월"], # 1,3,5,7,9,11월만 명시 [1]
+            ticktext=["1월", "3월", "5월", "7월", "9월", "11월"]
+        ),
+        hovermode="x unified",  # 마우스 오버 시 단일 창에 기준날짜, 체감 BSI, 전망 BSI 전체 표시 [1]
+        template="plotly_white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    # 수평 기준선 100 추가 [1]
+    fig_bsi.add_hline(y=100, line_width=1.5, line_dash="dash", line_color="gray", annotation_text="기준선 (100)", annotation_position="top left")
+
+    st.plotly_chart(fig_bsi, use_container_width=True, key="p1_bsi_line_chart")
+    st.markdown("---")
+
+    # 기존 1), 2) 차트 렌더링 영역 진입
     df_fest, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
     df_fest = normalize_festival_data(df_fest)
     df_consume, is_c_mock = load_table_safely("업종별소비액", get_fallback_consume)
@@ -871,10 +929,10 @@ def render_page2():
         st.plotly_chart(fig_v_trend, use_container_width=True)
 
     # ------------------------------------------
-    # 차트 4번: 지방소멸 위기 의식 및 지자체 준비 수준 (설문 조사 기반 가로막대 차트) [1]
+    # 차트 4번: 지방소멸 위기 의식 및 지자체 준비 수준 (설문 조사 기반 가로막대 차트)
     # ------------------------------------------
     st.subheader("📊 차트 4: 지방소멸 위기 의식 및 지자체 준비 수준 (5점 만점)")
-    st.write("우리나라 지자체 공무원 및 대상을 기초로 한 지방소멸 위기 의식 조사 결과를 가로막대 형태로 고찰합니다 [1].")
+    st.write("우리나라 지자체 공무원 및 대상을 기초로 한 지방소멸 위기 의식 조사 결과를 가로막대 형태로 고찰합니다.")
 
     df_survey = pd.DataFrame({
         "문항번호": ["Q47", "Q47_1", "Q48", "Q48_1", "Q49_1", "Q49_2", "Q49_3", "Q49_4", "Q49_5"],
@@ -918,7 +976,7 @@ def render_page2():
         showlegend=True,
         legend_title_text="구분",
         margin=dict(l=320, r=40, t=40, b=40),  # 긴 항목 내용을 표출하기 위해 좌측 여백 확장
-        yaxis=dict(autorange="reversed")       # 문항 순서대로 위에서 아래로 표출 [1]
+        yaxis=dict(autorange="reversed")       # 문항 순서대로 위에서 아래로 표출
     )
 
     # 텍스트 포맷 및 소수점 정렬
@@ -1000,17 +1058,17 @@ def render_page3():
     df_fest_clean = df_fest.copy()
     df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0)
     
-    df_sub["매칭키"] = df_sub[org_col].apply(normalize_region_name)
+    df_sub["text"] = df_sub[org_col].apply(normalize_region_name)
     
     df_f_map = df_fest_clean[[fest_reg, foreign_col]].copy()
     df_f_map.columns = ["지자체명", "외부방문자"]
-    df_f_map["매칭키"] = df_f_map["지자체명"].apply(normalize_region_name)
+    df_f_map["text"] = df_f_map["지자체명"].apply(normalize_region_name)
     
-    df_roi = pd.merge(df_sub, df_f_map, on="매칭키", how="left")
+    df_roi = pd.merge(df_sub, df_f_map, on="text", how="left")
     df_roi["외부방문자"] = df_roi["외부방문자"].fillna(0)
     
-    # 효율성 지수 산출: (외부방문자 규모 / (순원가 / 10,000,000))
-    df_roi["text"] = df_roi.apply(
+    # 예산 효율성 ROI 연산
+    df_roi["ROI_value"] = df_roi.apply(
         lambda r: (r["외부방문자"] / (r[net_cost_col] / 10000000)) if r[net_cost_col] > 0 else 0, axis=1
     )
     
@@ -1018,11 +1076,11 @@ def render_page3():
         fig_roi = px.bar(
             df_roi,
             x=name_col,
-            y="text",
+            y="ROI_value",
             text_auto=".2f",
             title="축제별 세금 투입 대비 외부 유입 가치 (ROI 지수)",
-            labels={"text": "세금 1천만원 당 외부 유입 지수", name_col: "축제명"},
-            color="text",
+            labels={"ROI_value": "세금 1천만원 당 외부 유입 지수", name_col: "축제명"},
+            color="ROI_value",
             color_continuous_scale="Reds",
             template="plotly_white"
         )
