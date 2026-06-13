@@ -423,16 +423,16 @@ def get_fallback_cost():
 
 
 # ==========================================
-# 1. 페이지 1: 축제 현황 및 업종별 누적 소비 구조
+# 1. 페이지 1: 월별 BSI 수치 및 축제 분석
 # ==========================================
 def render_page1():
     st.title("🎪 지역 축제 현황 및 시계열 소비 패턴")
-    st.markdown("축제 지표 데이터 구조를 동적으로 정제하여 시계열 동향을 보다 명확하게 파악합니다.")
+    st.markdown("축제 지표 데이터 구조를 동적으로 정제하여 소비 트렌드 및 기업 경기 동향을 복합 고찰합니다.")
     
     # ------------------------------------------
-    # [수정] 0) 월별 소상공인 BSI 수치 꺾은선 차트 (실측 데이터 반영) [1]
+    # 0) 월별 소상공인 BSI 수치 꺾은선 차트 (실측 데이터 반영)
     # ------------------------------------------
-    st.subheader("📈 월별 BSI 수치 꺾은선 차트")
+    st.subheader("📊 월별 BSI 수치 꺾은선 차트")
     st.write("기준선(100)을 중심으로 서울/경기를 제외한 15개 시도 소상공인들의 경기 체감도 및 전망 흐름을 시계열로 비교합니다 [1].")
 
     # 소상공인 BSI 15개시도 평균 실측 데이터프레임 빌드 [1]
@@ -513,18 +513,20 @@ def render_page1():
     st.plotly_chart(fig_bsi, use_container_width=True, key="p1_bsi_line_chart")
     st.markdown("---")
 
-    # 기존 1), 2) 차트 영역 진입
+    # 기존 1), 2) 차트 데이터 로드 및 정형화
     df_fest, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
     df_fest = normalize_festival_data(df_fest)
     df_consume, is_c_mock = load_table_safely("업종별소비액", get_fallback_consume)
     
     if is_f_mock or is_c_mock:
         st.sidebar.warning("⚠️ 일부 원본 데이터 누락으로 예비 시뮬레이션 데이터를 함께 활용 중입니다.")
-        
-    col1, col2 = st.columns(2)
-    
-    # 1) 축제별 외부방문자 유입 및 관광소비 사분면 버블 차트 (col1)
-    with col1:
+
+    # ------------------------------------------
+    # [수정] 1) 축제 유형 분석 세로 정렬 및 인사이트 박스 배치 [1]
+    # ------------------------------------------
+    row1_col_chart, row1_col_insight = st.columns([3, 1]) # 가로 비 분할 (차트 3 : 인사이트 1) [1]
+
+    with row1_col_chart:
         st.subheader("📍 축제 유형 분석 (외부방문자 유입률 × 관광소비)")
         name_col = find_col(
             df_fest.columns, 
@@ -597,9 +599,21 @@ def render_page1():
         else:
             st.write("분석 필수 항목(관광소비, 외부인 유입, 축제지 집중률) 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
             st.dataframe(df_fest.head())
-            
-    # 2) 시계열 꺾은선 소비 차트 (col2)
-    with col2:
+
+    # 축제 유형 분석용 인사이트 전용 박스 배치 (공백 보존) [1]
+    with row1_col_insight:
+        st.markdown("<br><br>", unsafe_allowed_html=True) # 차트 헤더와 정렬 정돈 목적의 마진
+        st.subheader("💡 분석 인사이트")
+        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*") [1]
+
+    st.markdown("---")
+
+    # ------------------------------------------
+    # [수정] 2) 연도별 업종 소비 흐름 세로 정렬 및 인사이트 박스 배치 [1]
+    # ------------------------------------------
+    row2_col_chart, row2_col_insight = st.columns([3, 1]) # 가로 비 분할 (차트 3 : 인사이트 1) [1]
+
+    with row2_col_chart:
         st.subheader("📈 연도별 업종 소비 흐름 (꺾은선)")
         year_col = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0]
         
@@ -637,6 +651,13 @@ def render_page1():
         )
         st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
+    # 연도별 업종 소비 흐름용 인사이트 전용 박스 배치 (공백 보존) [1]
+    with row2_col_insight:
+        st.markdown("<br><br>", unsafe_allowed_html=True) # 차트 헤더와 정렬 정돈 목적의 마진
+        st.subheader("💡 분석 인사이트")
+        st.info("*(추후 분석 인사이트 내용을 첨부할 예정입니다)*") [1]
+
+    st.markdown("---")
     st.info("""
     **💡 데이터 분석 결과 보고**
     
@@ -793,7 +814,7 @@ def render_page2():
         
     df_relation["상권구분"] = df_relation.apply(check_is_experimental, axis=1)
     
-    # 버블 크기 계산: 대조 상권은 점 크기를 30 * 100 (3,000)으로 일괄 고정, 실험군은 규모에 비례(최소 26 * 100)하게 확대 [1]
+    # 버블 크기 계산: 대조 상권은 요청에 따라 30 * 100 (3,000)으로 적용, 실험군은 최소 26 * 100 (2,600) 이상으로 설정
     df_relation["point_size"] = df_relation["외부방문자유입"] * 100
     df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "point_size"] = 30 * 100
     df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["point_size"] < 26 * 100), "point_size"] = 26 * 100
