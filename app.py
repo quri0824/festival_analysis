@@ -707,10 +707,10 @@ def render_page2():
         
     df_relation["상권구분"] = df_relation.apply(check_is_experimental, axis=1)
     
-    # 버블 크기 계산: 일반(대조) 상권 점 크기를 축제상권보다 시각적으로 확실히 작게 설정 (대조군 8, 실험군 26 이상) [1]
-    df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 100
-    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "점크기_방문자"] = 8
-    df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["점크기_방문자"] < 26), "점크기_방문자"] = 26
+    # 버블 크기 계산: 대조 상권은 점 크기를 30으로 일괄 고정, 실험군은 규모에 비례(최소 50)하게 확대 [1]
+    df_relation["point_size"] = df_relation["외부방문자유입"] * 100
+    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "point_size"] = 30
+    df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["point_size"] < 50), "point_size"] = 50
     
     # 지자체 예산 규모 (버블 크기 및 산식) 원래대로 복원 (예산 / 100 및 하한값 보안)
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
@@ -730,7 +730,7 @@ def render_page2():
         df_relation,
         x="임대료변화율",
         y="공실률변화량",
-        size="점크기_방문자",
+        size="point_size",
         color="상권구분",
         text=district_col_vac,  # 상권명 표시
         color_discrete_map={
@@ -740,7 +740,7 @@ def render_page2():
         labels={
             "임대료변화율": f"임대료 변화율 (% / {first_q} ➔ {last_q})",
             "공실률변화량": f"공실률 변화량 (p.p. / {first_q} ➔ {last_q})",
-            "점크기_방문자": "외부방문자 유입 지수 * 100"
+            "point_size": "외부방문자 유입 지수 * 100"
         },
         range_x=[-4, 4],  # X축 범위를 -4 ~ 4로 강제 설정
         template="plotly_white"
@@ -789,7 +789,7 @@ def render_page2():
         z="예산(백만원)",
         size="점크기_예산",
         color="상권구분",
-        hover_name=district_col_vac,  # 마우스 오버(호버) 툴팁 상단에 상권명이 나타나도록 지정 [1]
+        hover_name=district_col_vac,  # 마우스 오버(호버) 툴팁 상단에 상권명이 나타나도록 지정
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
             "일반 상권 (대조군)": "#1F77B4"
