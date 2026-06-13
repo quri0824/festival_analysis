@@ -3,7 +3,6 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-import numpy as np
 
 # ==========================================
 # 0. 앱 기본 설정 및 예외 처리
@@ -65,7 +64,6 @@ def find_matching_csv(target_name):
 
 
 # 헬퍼 함수: 안전한 데이터 로딩 (DB -> CSV -> Fallback 순차 탐색)
-# [오류 해결 핵심 1]: 모든 로드 결과에 .reset_index(drop=True)를 적용해 중복 인덱스 원천 소멸시킴
 def load_table_safely(table_name, fallback_data_func):
     # 1. SQLite 데이터베이스 탐색
     matched_table = find_matching_table(table_name)
@@ -73,7 +71,7 @@ def load_table_safely(table_name, fallback_data_func):
         conn = sqlite3.connect(DB_FILE)
         try:
             df = pd.read_sql_query(f"SELECT * FROM `{matched_table}`", conn)
-            return df.reset_index(drop=True), False
+            return df, False
         except Exception:
             pass
         finally:
@@ -84,12 +82,12 @@ def load_table_safely(table_name, fallback_data_func):
     if matched_csv:
         try:
             df = pd.read_csv(matched_csv, encoding='utf-8-sig')
-            return df.reset_index(drop=True), False
+            return df, False
         except Exception:
             pass
             
     # 3. 실패 시 Fallback 임시 데이터 반환
-    return fallback_data_func().reset_index(drop=True), True
+    return fallback_data_func(), True
 
 
 # 헬퍼 함수: 컬럼명 매칭
@@ -107,7 +105,7 @@ def find_col(columns, search_terms):
 def detect_region_col(df):
     name_match = find_col(
         df.columns, 
-        ["지자체", "자치단체", "지역", "시도", "개최지", "행정구역", "상권명"]
+        ["지자체", "자치단체", "지역", "시도", "개최지", "행정구역"]
     )
     if name_match:
         return name_match
@@ -127,7 +125,15 @@ def detect_region_col(df):
     return obj_cols[0] if obj_cols else df.columns[0]
 
 
-# 동적 엔진 2: 년도/ID를 제외한 첫 번째 유효한 수치형 컬럼 검출
+# 동적 엔진 2: 상권명 세부 컬럼 검출
+def detect_detailed_district_col(df):
+    name_match = find_col(df.columns, ["상권명", "상권", "소분류", "지점"])
+    if name_match:
+        return name_match
+    return None
+
+
+# 동적 엔진 3: 년도/ID를 제외한 첫 번째 유효한 수치형 컬럼 검출
 def detect_numeric_col(df):
     name_match = find_col(
         df.columns, 
@@ -141,6 +147,21 @@ def detect_numeric_col(df):
         if not any(ex in str(col).lower() for ex in ["연도", "년도", "id", "코드"]):
             return col
     return num_cols[0] if num_cols else None
+
+
+# 소수점 특정 자리수 정밀 버림 가공 함수
+def truncate_float(val, decimals=2):
+    if pd.isna(val) or val is None:
+        return 0.0
+    try:
+        val = float(val)
+        # 이진 부동소수점 오차를 방지하기 위해 넉넉한 정밀도의 스트링으로 변환 후 끊기
+        s = f"{val:.6f}"
+        before_dec, after_dec = s.split('.')
+        truncated_after = after_dec[:decimals]
+        return float(f"{before_dec}.{truncated_after}")
+    except Exception:
+        return val
 
 
 # 가로 형태 데이터를 세로 형태로 변환
@@ -167,11 +188,11 @@ def melt_quarters(df, value_name):
         value_name=value_name
     )
     df_melted["분기"] = df_melted["분기"].astype(str)
-    return df_melted.reset_index(drop=True), region_col
+    return df_melted, region_col
 
 
 # ==========================================
-# 행정구역 매핑 및 소수점 절사 정규화 모듈
+# 행정구역 매핑 및 세로형 축제 데이터 정규화 모듈
 # ==========================================
 CITY_TO_PROVINCE = {
     "춘천": "강원", "강릉": "강원", "원주": "강원", "속초": "강원", "평창": "강원", "화천": "강원", "인제": "강원", "홍천": "강원", "횡성": "강원",
@@ -218,12 +239,6 @@ def normalize_region_name(name):
     return name[:2]
 
 
-# 판다스 시리즈의 값들을 소수점 셋째 자리에서 버려 소수 둘째 자리까지만 나타내는 함수
-def truncate_series(series):
-    s_num = pd.to_numeric(series, errors='coerce').fillna(0.0)
-    return np.trunc(s_num * 100) / 100
-
-
 def get_region_from_festival(name, df_cost=None):
     name = str(name)
     
@@ -258,7 +273,6 @@ def get_region_from_festival(name, df_cost=None):
 
 
 def normalize_festival_data(df, df_cost=None):
-    df = df.reset_index(drop=True)
     # CSV의 롱 포맷 식별용 주요 컬럼 확인
     gubun_col = find_col(df.columns, ["구분명", "구분"])
     val_col = find_col(df.columns, ["지표값", "값", "실적"])
@@ -293,7 +307,7 @@ def normalize_festival_data(df, df_cost=None):
             
             # 분석을 위한 표준 '지자체' 행정구역 매핑 추가
             df_pivoted["지자체"] = df_pivoted[name_col].apply(lambda x: get_region_from_festival(x, df_cost))
-            return df_pivoted.reset_index(drop=True)
+            return df_pivoted
         except Exception:
             return df
     else:
@@ -301,13 +315,14 @@ def normalize_festival_data(df, df_cost=None):
         if "지자체" not in df.columns:
             name_col = find_col(df.columns, ["축제명", "행사명", "축제"]) or df.columns[0]
             df["지자체"] = df[name_col].apply(lambda x: get_region_from_festival(x, df_cost))
-        return df.reset_index(drop=True)
+        return df
 
 
 # ==========================================
 # Fallback 시뮬레이션용 예비 데이터 생성기
 # ==========================================
 def get_fallback_festival():
+    # 유형별(당일치기형, 체류형, 외부유입 낮음) 분포를 사분면과 격자에 매핑하기 위해 보정한 가상 데이터
     return pd.DataFrame({
         "축제명": ["춘천닭갈비축제", "강경젓갈축제", "지평선축제", "머드축제"],
         "현지인방문자 유입": [32.4, 45.1, 28.7, 15.3],
@@ -326,24 +341,24 @@ def get_fallback_consume():
 
 def get_fallback_property_vacancy():
     return pd.DataFrame({
-        "지역": ["강원 춘천시 명동", "충남 논산시 강경읍", "전북 김제시 요촌동", "서울 강남구 신사역", "경기 수원시 인계동", "인천 부평구 부평역", "부산 중구 남포동", "대구 중구 동성로"],
+        "지역": ["강원", "충남", "전북", "서울", "경기", "인천", "부산", "대구"],
+        "상권명": ["춘천역", "논산 화지시장", "김제 상권", "명동", "수원역", "부평", "해운대", "동성로"],
         "2022_1Q": [12.1, 14.5, 10.2, 8.5, 9.1, 11.2, 13.1, 14.0],
         "2022_2Q": [12.3, 14.8, 10.5, 8.7, 9.3, 11.5, 13.5, 14.2],
         "2022_3Q": [12.8, 15.2, 11.2, 9.0, 8.9, 12.1, 14.0, 13.8],
         "2022_4Q": [13.1, 15.9, 11.8, 9.2, 8.5, 12.4, 14.5, 13.3],
-        "2024_1Q": [13.2456, 16.0123, 11.9542, 9.3512, 8.6121, 12.5487, 14.7121, 13.2415],
-        "2024_2Q": [13.5121, 16.2415, 12.0124, 9.5124, 8.7124, 12.8124, 14.9124, 13.1124]
+        "2024_2Q": [13.5, 16.2, 12.0, 9.5, 8.7, 12.8, 14.9, 13.1]
     })
 
 def get_fallback_property_rent():
     return pd.DataFrame({
-        "지역": ["강원 춘천시 명동", "충남 논산시 강경읍", "전북 김제시 요촌동", "서울 강남구 신사역", "경기 수원시 인계동", "인천 부평구 부평역", "부산 중구 남포동", "대구 중구 동성로"],
+        "지역": ["강원", "충남", "전북", "서울", "경기", "인천", "부산", "대구"],
+        "상권명": ["춘천역", "논산 화지시장", "김제 상권", "명동", "수원역", "부평", "해운대", "동성로"],
         "2022_1Q": [3.2, 2.5, 2.8, 5.1, 4.2, 3.8, 4.0, 3.5],
         "2022_2Q": [3.3, 2.6, 2.9, 5.2, 4.1, 3.9, 4.1, 3.4],
         "2022_3Q": [3.4, 2.7, 3.0, 5.3, 4.0, 4.1, 4.2, 3.3],
         "2022_4Q": [3.4, 2.8, 3.1, 5.4, 3.9, 4.2, 4.2, 3.3],
-        "2024_1Q": [3.4124, 2.8451, 3.1256, 5.4124, 3.9451, 4.2124, 4.2541, 3.3214],
-        "2024_2Q": [3.5152, 2.8124, 3.1124, 5.5124, 4.0124, 4.3124, 4.2124, 3.2124]
+        "2024_2Q": [3.5, 2.8, 3.1, 5.5, 4.0, 4.3, 4.2, 3.2]
     })
 
 def get_fallback_cost():
@@ -498,7 +513,7 @@ def render_page1():
 # ==========================================
 def render_page2():
     st.title("🏢 젠트리피케이션과 지역 축제 상관성 분석")
-    st.markdown("축제 상권(실험군)과 일반 상권(대조군) 사이의 공실률 변동과 임대료 변화 추이를 비교 분석합니다.")
+    st.markdown("축제가 상권 변동(임대료 및 공실률)에 미치는 영향을 실험군과 대조군 설정을 통해 분석합니다.")
     
     df_vac, is_v_mock = load_table_safely("임대동향 지역별 공실률 소규모 상가", get_fallback_property_vacancy)
     df_rent, is_r_mock = load_table_safely("임대동향 지역별 임대료 소규모 상가", get_fallback_property_rent)
@@ -511,60 +526,46 @@ def render_page2():
     if is_v_mock or is_r_mock or is_f_mock or is_c_mock:
         st.sidebar.warning("⚠️ 일부 원본 데이터 누락으로 예비 시뮬레이션 데이터를 함께 활용 중입니다.")
         
-    # ------------------------------------------
-    # 2024년도 데이터만 사용하도록 분기 강제 필터링
-    # ------------------------------------------
-    cols_2024_vac = sorted([c for c in df_vac.columns if "2024" in str(c)])
-    cols_2024_rent = sorted([c for c in df_rent.columns if "2024" in str(c)])
-    common_2024 = sorted(list(set(cols_2024_vac) & set(cols_2024_rent)))
+    quarter_cols_vac = [c for c in df_vac.columns if any(q in str(c) for q in ["Q", "q", "1/4", "2/4", "3/4", "4/4", "_", "."])]
+    quarter_cols_vac = sorted(quarter_cols_vac)
     
-    if len(common_2024) >= 2:
-        first_q = common_2024[0]
-        last_q = common_2024[-1]
-    elif len(common_2024) == 1:
-        first_q = common_2024[0]
-        last_q = common_2024[0]
+    if len(quarter_cols_vac) >= 2:
+        first_q = quarter_cols_vac[0]
+        last_q = quarter_cols_vac[-1]
     else:
-        # 데이터셋에 2024 분기가 존재하지 않을 시 Fallback 지정
-        first_q, last_q = "2024_1Q", "2024_2Q"
+        first_q, last_q = "2022_1Q", "2024_2Q"
         
-    st.info(f"📅 **2024년 분석 대상 분기 설정**: {first_q} ➔ {last_q}")
-    
+    # 광역 지자체 컬럼 및 세부 상권명 컬럼 추출
     reg_col_vac = detect_region_col(df_vac)
+    district_col_vac = detect_detailed_district_col(df_vac) or reg_col_vac
+    
     reg_col_rent = detect_region_col(df_rent)
+    district_col_rent = detect_detailed_district_col(df_rent) or reg_col_rent
     
-    # [오류 해결 핵심 2]: 다대다 병합 및 리인덱싱 에러 방지를 위해,
-    # 행 변경 전에 인덱스를 완벽하게 고유화하고 상권명 전체를 유지하는 가공 진행
-    df_vac_calc = df_vac.reset_index(drop=True).rename(columns={reg_col_vac: "상권명"})
-    df_rent_calc = df_rent.reset_index(drop=True).rename(columns={reg_col_rent: "임대상권명"})
+    # 1) 공실률 변화량 연산 및 버림 가공
+    df_vac_calc = df_vac[[reg_col_vac, district_col_vac, first_q, last_q]].copy()
+    df_vac_calc["공실률_first"] = pd.to_numeric(df_vac_calc[first_q], errors='coerce').fillna(0)
+    df_vac_calc["공실률_last"] = pd.to_numeric(df_vac_calc[last_q], errors='coerce').fillna(0)
+    df_vac_calc["공실률변화량"] = df_vac_calc["공실률_last"] - df_vac_calc["공실률_first"]
+    df_vac_calc["공실률변화량"] = df_vac_calc["공실률변화량"].apply(lambda x: truncate_float(x, 2))
     
-    # 1) 공실률 변화량 연산 (2024 데이터 한정 및 소수 셋째자리 버림)
-    vac_first = pd.to_numeric(df_vac_calc[first_q], errors='coerce').fillna(0.0)
-    vac_last = pd.to_numeric(df_vac_calc[last_q], errors='coerce').fillna(0.0)
-    df_vac_calc["공실률변화량"] = truncate_series(vac_last - vac_first)
-    df_vac_calc["매칭키"] = df_vac_calc["상권명"].apply(normalize_region_name)
+    # 2) 임대료 변화율 연산 및 버림 가공
+    df_rent_calc = df_rent[[reg_col_rent, district_col_rent, first_q, last_q]].copy()
+    df_rent_calc["임대료_first"] = pd.to_numeric(df_rent_calc[first_q], errors='coerce').fillna(1e-5)
+    df_rent_calc["임대료_last"] = pd.to_numeric(df_rent_calc[last_q], errors='coerce').fillna(0)
+    df_rent_calc["임대료변화율"] = ((df_rent_calc["임대료_last"] - df_rent_calc["임대료_first"]) / df_rent_calc["임대료_first"]) * 100
+    df_rent_calc["임대료변화율"] = df_rent_calc["임대료변화율"].apply(lambda x: truncate_float(x, 2))
     
-    # 2) 임대료 변화율 연산 (2024 데이터 한정 및 소수 셋째자리 버림)
-    rent_first = pd.to_numeric(df_rent_calc[first_q], errors='coerce').fillna(0.0)
-    rent_last = pd.to_numeric(df_rent_calc[last_q], errors='coerce').fillna(0.0)
-    
-    df_rent_calc["임대료변화율"] = 0.0
-    mask = rent_first > 0
-    df_rent_calc.loc[mask, "임대료변화율"] = ((rent_last[mask] - rent_first[mask]) / rent_first[mask]) * 100
-    df_rent_calc["임대료변화율"] = truncate_series(df_rent_calc["임대료변화율"])
-    df_rent_calc["매칭키"] = df_rent_calc["임대상권명"].apply(normalize_region_name)
-    
-    # 3) 상권 데이터 상권명 전체를 포함하여 통합 (1:1 상권 매핑)
+    # 3) 상권명 매칭 통합 (세부 상권명 유지)
     df_prop = pd.merge(
-        df_vac_calc[["상권명", "공실률변화량", "매칭키"]], 
-        df_rent_calc[["임대상권명", "임대료변화율"]], 
-        left_on="상권명",
-        right_on="임대상권명",
-        how="inner"
+        df_vac_calc[[reg_col_vac, district_col_vac, "공실률변화량"]], 
+        df_rent_calc[[district_col_rent, "임대료변화율"]], 
+        left_on=district_col_vac, 
+        right_on=district_col_rent
     )
+    df_prop["매칭키"] = df_prop[reg_col_vac].apply(normalize_region_name)
     
     # 4) 축제 규모(외부방문자 유입) 연동
-    # [오류 해결 핵심 3]: 조인 시 다대다 무한 열 생성을 막기 위해, 매칭키 기준 1개 고유값으로 밀집(Grouping)
     fest_reg = detect_region_col(df_fest)
     foreign_col = find_col(df_fest.columns, ["외부방문자 유입", "외부방문자"]) or detect_numeric_col(df_fest)
     
@@ -572,11 +573,13 @@ def render_page2():
     df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0)
     
     df_f_sub = df_fest_clean[[fest_reg, foreign_col]].copy()
-    df_f_sub.columns = ["지자체명", "외부방문자유입"]
-    df_f_sub["매칭키"] = df_f_sub["지자체명"].apply(normalize_region_name)
-    df_fest_group = df_f_sub.groupby("매칭키")["외부방문자유입"].mean().reset_index()
+    df_f_sub.columns = ["_temp_reg", "_temp_foreign"]
+    df_fest_group = df_f_sub.groupby("_temp_reg")["_temp_foreign"].mean().reset_index()
     
-    # 5) 지자체 총 예산액 연동 및 그룹 고유화
+    df_fest_group.columns = ["지자체명", "외부방문자유입"]
+    df_fest_group["매칭키"] = df_fest_group["지자체명"].apply(normalize_region_name)
+    
+    # 5) 지자체 총 예산액 연동
     cost_org = find_col(df_cost.columns, ["자치단체", "지자체"]) or df_cost.columns[0]
     cost_val = find_col(df_cost.columns, ["총비용"]) or df_cost.select_dtypes(include=['number']).columns[-1]
     
@@ -584,24 +587,26 @@ def render_page2():
     df_cost_clean[cost_val] = pd.to_numeric(df_cost_clean[cost_val], errors='coerce').fillna(0)
     
     df_c_sub = df_cost_clean[[cost_org, cost_val]].copy()
-    df_c_sub.columns = ["예산지자체", "예산총액(원)"]
-    df_c_sub["매칭키"] = df_c_sub["예산지자체"].apply(normalize_region_name)
-    df_cost_group = df_c_sub.groupby("매칭키")["예산총액(원)"].sum().reset_index()
+    df_c_sub.columns = ["_temp_org", "_temp_cost"]
+    df_cost_group = df_c_sub.groupby("_temp_org")["_temp_cost"].sum().reset_index()
     
-    # 6) 종합 조인 (실험군 vs 대조군 레이블 수립) - 고유화된 그룹 테이블과 안정적 매칭
+    df_cost_group.columns = ["예산지자체", "예산총액(원)"]
+    df_cost_group["매칭키"] = df_cost_group["예산지자체"].apply(normalize_region_name)
+    
+    # 6) 종합 조인 (실험군 vs 대조군 레이블 수립)
     df_relation = pd.merge(df_prop, df_fest_group, on="매칭키", how="left")
     df_relation = pd.merge(df_relation, df_cost_group, on="매칭키", how="left")
     
     df_relation["외부방문자유입"] = df_relation["외부방문자유입"].fillna(0)
     df_relation["예산총액(원)"] = df_relation["예산총액(원)"].fillna(1e6)
     
-    df_relation["상권구분"] = df_relation["외부방문자유입"].apply(
-        lambda x: "축제 상권 (실험군)" if x > 0 else "일반 상권 (대조군)"
+    df_relation["상권구분"] = df_relation["지자체명"].apply(
+        lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)"
     )
     
-    # 외부방문자 유입률에 100을 가중한 크기 보정식 적용 (sizeref 보완으로 버블 크기 자동 스케일링 확보)
+    # 버블 크기 계산: 외부방문자 유입 * 100 공식 적용 (안정적인 시각화를 위한 기본값 8 보완)
     df_relation["점크기_방문자"] = df_relation["외부방문자유입"] * 100
-    df_relation.loc[df_relation["점크기_방문자"] < 5, "점크기_방문자"] = 8
+    df_relation.loc[df_relation["점크기_방문자"] < 8, "점크기_방문자"] = 8
     
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
     df_relation["점크기_예산"] = df_relation["예산(백만원)"] / 100
@@ -610,8 +615,8 @@ def render_page2():
     # ------------------------------------------
     # 차트 1번: 임대료 변화율 x 공실률 변화 산점도
     # ------------------------------------------
-    st.subheader("📊 차트 1: 2024년 상권 임대료 변화율 × 공실률 변화 사분면 매트릭스")
-    st.write("2024년도 기간 내 발생한 상권 지표 변동량을 사분면에 매핑합니다. 버블의 크기는 **외부방문자 유입량 × 100** 수식으로 결정됩니다.")
+    st.subheader("📊 차트 1: 임대료 변화율 × 공실률 변화 사분면 매트릭스")
+    st.write("1사분면(우상단: 임대료 상승 + 공실률 증가)은 임차인이 내몰리는 **젠트리피케이션 압력**이 상대적으로 두드러지는 위험 영역입니다.")
     
     fig1 = px.scatter(
         df_relation,
@@ -619,29 +624,28 @@ def render_page2():
         y="공실률변화량",
         size="점크기_방문자",
         color="상권구분",
-        text="상권명",  # 상권명 전체 표시 (생략하지 않음)
-        size_max=40,    # 버블 최대 크기 설정으로 뷰 균형 조율
+        text=district_col_vac,  # 상권명을 생략하지 않고 텍스트 레이블로 출력
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
             "일반 상권 (대조군)": "#1F77B4"
         },
         labels={
-            "임대료변화율": f"2024년 임대료 변화율 (% / 소수 셋째자리 버림)",
-            "공실률변화량": f"2024년 공실률 변화량 (p.p. / 소수 셋째자리 버림)",
-            "점크기_방문자": "외부방문자 유입 지수 (환산)"
+            "임대료변화율": f"임대료 변화율 (% / {first_q} ➔ {last_q})",
+            "공실률변화량": f"공실률 변화량 (p.p. / {first_q} ➔ {last_q})",
+            "점크기_방문자": "외부방문자 유입 지수 * 100"
         },
         template="plotly_white"
     )
     fig1.add_hline(y=0, line_dash="dash", line_color="gray")
     fig1.add_vline(x=0, line_dash="dash", line_color="gray")
     fig1.update_traces(textposition='top center')
-    st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix_2024")
+    st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix")
     
     # ------------------------------------------
     # 차트 2번: 3차원 버블 차트 (예산 규모 통제 분석)
     # ------------------------------------------
     st.subheader("🪐 차트 2: 지자체 예산 규모를 통제한 3차원 버블 입체 분석")
-    st.write("지자체의 예산 고저를 통제 변수로 두고 2024년 상권 변동 추세를 한 차원 입체적으로 관측합니다.")
+    st.write("지자체의 예산 고저를 통제 변수로 두고 축제 개최 여부에 따른 부동산 상권 변동의 정위적 구분을 고찰합니다.")
     
     fig2 = px.scatter_3d(
         df_relation,
@@ -650,7 +654,7 @@ def render_page2():
         z="예산(백만원)",
         size="점크기_예산",
         color="상권구분",
-        text="상권명",
+        text=district_col_vac,  # 상권명 생략 없이 출력
         color_discrete_map={
             "축제 상권 (실험군)": "#FF4B4B",
             "일반 상권 (대조군)": "#1F77B4"
@@ -664,13 +668,13 @@ def render_page2():
         template="plotly_white"
     )
     fig2.update_layout(margin=dict(l=0, r=0, b=0, t=40))
-    st.plotly_chart(fig2, use_container_width=True, key="p2_3d_bubble_2024")
+    st.plotly_chart(fig2, use_container_width=True, key="p2_3d_bubble")
 
     # ------------------------------------------
     # 차트 3번: 시계열 실시간 동향 비교 (꺾은선)
     # ------------------------------------------
     st.subheader("📈 차트 3: 축제 유무에 따른 분기별 임대료 및 공실률 실시간 추이")
-    st.write("전체 시간의 연장선상에서 두 비교군(실험군 및 대조군)의 주요 상권 지표 추이를 조망합니다.")
+    st.write("시간 흐름의 연장선상에서 두 비교군(실험군 및 대조군)의 주요 상권 지표 추이를 조망합니다.")
     
     m_vac_full, r_v_col = melt_quarters(df_vac, "공실률")
     m_rent_full, r_r_col = melt_quarters(df_rent, "임대료")
@@ -678,11 +682,11 @@ def render_page2():
     m_vac_full["매칭키"] = m_vac_full[r_v_col].apply(normalize_region_name)
     m_rent_full["매칭키"] = m_rent_full[r_r_col].apply(normalize_region_name)
     
-    m_vac_full = pd.merge(m_vac_full, df_fest_group, on="매칭키", how="left")
-    m_vac_full["상권구분"] = m_vac_full["외부방문자유입"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) and x > 0 else "일반 상권 (대조군)")
+    m_vac_full = pd.merge(m_vac_full, df_fest_group[["매칭키", "지자체명"]], on="매칭키", how="left")
+    m_vac_full["상권구분"] = m_vac_full["지자체명"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)")
     
-    m_rent_full = pd.merge(m_rent_full, df_fest_group, on="매칭키", how="left")
-    m_rent_full["상권구분"] = m_rent_full["외부방문자유입"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) and x > 0 else "일반 상권 (대조군)")
+    m_rent_full = pd.merge(m_rent_full, df_fest_group[["매칭키", "지자체명"]], on="매칭키", how="left")
+    m_rent_full["상권구분"] = m_rent_full["지자체명"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)")
     
     m_vac_full["공실률"] = pd.to_numeric(m_vac_full["공실률"], errors='coerce').fillna(0)
     m_rent_full["임대료"] = pd.to_numeric(m_rent_full["임대료"], errors='coerce').fillna(0)
@@ -800,15 +804,13 @@ def render_page3():
     df_fest_clean = df_fest.copy()
     df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0)
     
-    df_sub["매칭키"] = df_sub[org_col].apply(lambda x: str(x)[:2] if pd.notna(x) else "")
+    df_sub["매칭키"] = df_sub[org_col].apply(normalize_region_name)
     
     df_f_map = df_fest_clean[[fest_reg, foreign_col]].copy()
     df_f_map.columns = ["지자체명", "외부방문자"]
     df_f_map["매칭키"] = df_f_map["지자체명"].apply(normalize_region_name)
     
-    df_f_map_unique = df_f_map.groupby("매칭키")["외부방문자"].mean().reset_index()
-    
-    df_roi = pd.merge(df_sub, df_f_map_unique, on="매칭키", how="left")
+    df_roi = pd.merge(df_sub, df_f_map, on="매칭키", how="left")
     df_roi["외부방문자"] = df_roi["외부방문자"].fillna(0)
     
     # 효율성 지수 산출: (외부방문자 규모 / (순원가 / 10,000,000))
