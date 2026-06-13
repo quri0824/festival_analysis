@@ -242,8 +242,8 @@ def normalize_festival_data(df, df_cost=None):
                 aggfunc='mean'
             ).reset_index()
             
-            # 비율 데이터(0~1)를 백분율(0~100) 단위로 통일 (축제지 집중률 포함)
-            for col in ["외부방문자 유입", "현지인방문자 유입", "축제지 집중률"]:
+            # 비율 데이터(0~1)를 백분율(0~100) 단위로 통일 (축제지 집중률 및 관광소비 포함)
+            for col in ["외부방문자 유입", "현지인방문자 유입", "축제지 집중률", "관광소비"]:
                 matched_c = find_col(df_pivoted.columns, [col])
                 if matched_c:
                     df_pivoted[matched_c] = pd.to_numeric(df_pivoted[matched_c], errors='coerce').fillna(0)
@@ -267,10 +267,12 @@ def normalize_festival_data(df, df_cost=None):
 # Fallback 시뮬레이션용 예비 데이터 생성기
 # ==========================================
 def get_fallback_festival():
+    # 유형별(당일치기형, 체류형, 외부유입 낮음) 분포를 사분면과 격자에 매핑하기 위해 보정한 가상 데이터
     return pd.DataFrame({
         "축제명": ["춘천닭갈비축제", "강경젓갈축제", "지평선축제", "머드축제"],
         "현지인방문자 유입": [32.4, 45.1, 28.7, 15.3],
-        "외부방문자 유입": [67.6, 54.9, 71.3, 84.7],
+        "외부방문자 유입": [82.6, 51.9, 75.3, 84.7],
+        "관광소비": [35.2, 78.9, 42.4, 75.1],
         "축제지 집중률": [75.4, 58.2, 91.3, 84.5],
         "지자체": ["강원", "충남", "전북", "충남"]
     })
@@ -328,47 +330,77 @@ def render_page1():
         
     col1, col2 = st.columns(2)
     
-    # 1) 축제 방문객 유입 비율 및 축제지 집중률 버블 차트 (col1)
+    # 1) 축제별 관광소비 및 외부인 유입 수준 4사분면 버블 차트 (col1)
     with col1:
-        st.subheader("📍 축제별 방문객 유입 및 축제지 집중률")
+        st.subheader("📍 축제 유형 분석 (관광소비 × 외부인 유입)")
         name_col = find_col(
             df_fest.columns, 
             ["축제명", "행사명", "축제", "이름"]
         ) or df_fest.columns[0]
         
-        local_col = find_col(df_fest.columns, ["현지인방문자 유입", "현지인"])
         foreign_col = find_col(df_fest.columns, ["외부방문자 유입", "외부방문자"])
+        consume_col = find_col(df_fest.columns, ["관광소비", "소비"])
         focus_col = find_col(df_fest.columns, ["축제지 집중률", "집중률"])
-        region_col = find_col(df_fest.columns, ["지자체", "지역"]) or name_col
         
-        if local_col and foreign_col and focus_col:
-            df_fest[local_col] = pd.to_numeric(df_fest[local_col], errors='coerce').fillna(0)
+        if foreign_col and consume_col and focus_col:
             df_fest[foreign_col] = pd.to_numeric(df_fest[foreign_col], errors='coerce').fillna(0)
+            df_fest[consume_col] = pd.to_numeric(df_fest[consume_col], errors='coerce').fillna(0)
             df_fest[focus_col] = pd.to_numeric(df_fest[focus_col], errors='coerce').fillna(0)
+            
+            # 중앙값 연산 (데이터 결여 시 0)
+            x_median = df_fest[consume_col].median() if len(df_fest) > 0 else 0
+            y_median = df_fest[foreign_col].median() if len(df_fest) > 0 else 0
+            
+            if pd.isna(x_median): x_median = 0
+            if pd.isna(y_median): y_median = 0
+            
+            # 사분면 분류 알고리즘 구축
+            def classify_quadrant(row):
+                y_val = row[foreign_col]
+                x_val = row[consume_col]
+                if y_val >= y_median and x_val < x_median:
+                    return "당일치기형"
+                elif y_val >= y_median and x_val >= x_median:
+                    return "체류형"
+                else:
+                    return "외부유입 낮음"
+            
+            df_fest["유형"] = df_fest.apply(classify_quadrant, axis=1)
             
             # 버블 최소 크기 및 표출 안전성 보장용 임시 컬럼 생성
             df_fest["_bubble_size"] = df_fest[focus_col].apply(lambda x: x if x > 0 else 8)
             
             fig1 = px.scatter(
                 df_fest,
-                x=local_col,
+                x=consume_col,
                 y=foreign_col,
                 size="_bubble_size",
-                color=region_col,
+                color="유형",
+                color_discrete_map={
+                    "당일치기형": "#D85A30",
+                    "체류형": "#1D9E75",
+                    "외부유입 낮음": "#378ADD"
+                },
                 hover_name=name_col,
                 text=name_col,
-                title="현지인 vs 외부인 유입 수준 및 축제지 집중률 (버블 크기)",
+                title="축제별 관광소비 및 외부인 유입 수준 (중앙값 기준 사분면)",
                 labels={
-                    local_col: "현지인 방문자 유입 (%)",
+                    consume_col: "관광소비 지수",
                     foreign_col: "외부인 방문자 유입 (%)",
-                    "_bubble_size": "축제지 집중률 (%)"
+                    "_bubble_size": "축제지 집중률 (%)",
+                    "유형": "축제 유형"
                 },
                 template="plotly_white"
             )
+            
+            # 중앙값 구분 기준선(Dashed Line) 추가
+            fig1.add_vline(x=x_median, line_dash="dash", line_color="gray", annotation_text="X 중앙값", annotation_position="top left")
+            fig1.add_hline(y=y_median, line_dash="dash", line_color="gray", annotation_text="Y 중앙값", annotation_position="bottom right")
+            
             fig1.update_traces(textposition='top center')
             st.plotly_chart(fig1, use_container_width=True, key="p1_visit_bubble_chart")
         else:
-            st.write("분석 필수 항목(현지인 유입, 외부인 유입, 축제지 집중률) 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
+            st.write("분석 필수 항목(관광소비, 외부인 유입, 축제지 집중률) 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
             st.dataframe(df_fest.head())
             
     # 2) 시계열 꺾은선 소비 차트 (col2)
