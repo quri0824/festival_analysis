@@ -707,10 +707,10 @@ def render_page2():
         
     df_relation["상권구분"] = df_relation.apply(check_is_experimental, axis=1)
     
-    # 버블 크기 계산: 대조 상권은 점 크기를 30으로 일괄 고정, 실험군은 규모에 비례(최소 50)하게 확대 [1]
+    # 버블 크기 계산: 대조 상권은 요청에 따라 30 * 100 (3,000)으로 적용, 실험군은 최소 26 * 100 (2,600) 이상으로 설정
     df_relation["point_size"] = df_relation["외부방문자유입"] * 100
-    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "point_size"] = 30
-    df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["point_size"] < 50), "point_size"] = 50
+    df_relation.loc[df_relation["상권구분"] == "일반 상권 (대조군)", "point_size"] = 30 * 100
+    df_relation.loc[(df_relation["상권구분"] == "축제 상권 (실험군)") & (df_relation["point_size"] < 26 * 100), "point_size"] = 26 * 100
     
     # 지자체 예산 규모 (버블 크기 및 산식) 원래대로 복원 (예산 / 100 및 하한값 보안)
     df_relation["예산(백만원)"] = df_relation["예산총액(원)"] / 1000000
@@ -869,6 +869,61 @@ def render_page2():
             template="plotly_white"
         )
         st.plotly_chart(fig_v_trend, use_container_width=True)
+
+    # ------------------------------------------
+    # 차트 4번: 지방소멸 위기 의식 및 지자체 준비 수준 (설문 조사 기반 가로막대 차트) [1]
+    # ------------------------------------------
+    st.subheader("📊 차트 4: 지방소멸 위기 의식 및 지자체 준비 수준 (5점 만점)")
+    st.write("우리나라 지자체 공무원 및 대상을 기초로 한 지방소멸 위기 의식 조사 결과를 가로막대 형태로 고찰합니다 [1].")
+
+    df_survey = pd.DataFrame({
+        "문항번호": ["Q47", "Q47_1", "Q48", "Q48_1", "Q49_1", "Q49_2", "Q49_3", "Q49_4", "Q49_5"],
+        "구분": [
+            "지방소멸 심각성", "지방소멸 심각성", 
+            "정부대응 효과성", "정부대응 효과성", 
+            "지방소멸 준비수준", "지방소멸 준비수준", "지방소멸 준비수준", "지방소멸 준비수준", "지방소멸 준비수준"
+        ],
+        "항목내용": [
+            "우리나라 지방소멸 문제의 심각성",
+            "소속 지자체에서의 지방소멸 문제의 심각성",
+            "지방소멸 문제에 대한 중앙정부의 대응 효과성",
+            "소속 지역 지방소멸 문제에 대한 지자체의 대응 효과성",
+            "지방소멸 대응 준비: 관심",
+            "지방소멸 대응 준비: 전문지식과 기술",
+            "지방소멸 대응 준비: 자원",
+            "지방소멸 대응 준비: 상위수준 정부의 지원 확보",
+            "지방소멸 대응 준비: 협력체계에 대한 참여권"
+        ],
+        "평균": [4.42, 3.74, 2.23, 2.73, 3.02, 2.64, 2.58, 2.48, 2.59]
+    })
+
+    fig4 = px.bar(
+        df_survey,
+        x="평균",
+        y="항목내용",
+        orientation="h",
+        color="구분",
+        color_discrete_map={
+            "지방소멸 심각성": "#FF4B4B",
+            "정부대응 효과성": "#D85A30",
+            "지방소멸 준비수준": "#1D9E75"
+        },
+        text="평균",
+        labels={"평균": "평균 점수 (5점 만점)", "항목내용": "설문 문항"},
+        range_x=[0, 5],
+        template="plotly_white"
+    )
+
+    fig4.update_layout(
+        showlegend=True,
+        legend_title_text="구분",
+        margin=dict(l=320, r=40, t=40, b=40),  # 긴 항목 내용을 표출하기 위해 좌측 여백 확장
+        yaxis=dict(autorange="reversed")       # 문항 순서대로 위에서 아래로 표출 [1]
+    )
+
+    # 텍스트 포맷 및 소수점 정렬
+    fig4.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+    st.plotly_chart(fig4, use_container_width=True, key="p2_survey_bar_chart")
 
     st.markdown("---")
     st.markdown("""
