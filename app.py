@@ -65,6 +65,7 @@ def find_matching_csv(target_name):
 
 
 # 헬퍼 함수: 안전한 데이터 로딩 (DB -> CSV -> Fallback 순차 탐색)
+# [오류 해결 핵심 1]: 모든 로드 결과에 .reset_index(drop=True)를 적용해 중복 인덱스 원천 소멸시킴
 def load_table_safely(table_name, fallback_data_func):
     # 1. SQLite 데이터베이스 탐색
     matched_table = find_matching_table(table_name)
@@ -72,7 +73,7 @@ def load_table_safely(table_name, fallback_data_func):
         conn = sqlite3.connect(DB_FILE)
         try:
             df = pd.read_sql_query(f"SELECT * FROM `{matched_table}`", conn)
-            return df, False
+            return df.reset_index(drop=True), False
         except Exception:
             pass
         finally:
@@ -83,12 +84,12 @@ def load_table_safely(table_name, fallback_data_func):
     if matched_csv:
         try:
             df = pd.read_csv(matched_csv, encoding='utf-8-sig')
-            return df, False
+            return df.reset_index(drop=True), False
         except Exception:
             pass
             
     # 3. 실패 시 Fallback 임시 데이터 반환
-    return fallback_data_func(), True
+    return fallback_data_func().reset_index(drop=True), True
 
 
 # 헬퍼 함수: 컬럼명 매칭
@@ -166,7 +167,7 @@ def melt_quarters(df, value_name):
         value_name=value_name
     )
     df_melted["분기"] = df_melted["분기"].astype(str)
-    return df_melted, region_col
+    return df_melted.reset_index(drop=True), region_col
 
 
 # ==========================================
@@ -257,6 +258,7 @@ def get_region_from_festival(name, df_cost=None):
 
 
 def normalize_festival_data(df, df_cost=None):
+    df = df.reset_index(drop=True)
     # CSV의 롱 포맷 식별용 주요 컬럼 확인
     gubun_col = find_col(df.columns, ["구분명", "구분"])
     val_col = find_col(df.columns, ["지표값", "값", "실적"])
@@ -291,7 +293,7 @@ def normalize_festival_data(df, df_cost=None):
             
             # 분석을 위한 표준 '지자체' 행정구역 매핑 추가
             df_pivoted["지자체"] = df_pivoted[name_col].apply(lambda x: get_region_from_festival(x, df_cost))
-            return df_pivoted
+            return df_pivoted.reset_index(drop=True)
         except Exception:
             return df
     else:
@@ -299,14 +301,13 @@ def normalize_festival_data(df, df_cost=None):
         if "지자체" not in df.columns:
             name_col = find_col(df.columns, ["축제명", "행사명", "축제"]) or df.columns[0]
             df["지자체"] = df[name_col].apply(lambda x: get_region_from_festival(x, df_cost))
-        return df
+        return df.reset_index(drop=True)
 
 
 # ==========================================
 # Fallback 시뮬레이션용 예비 데이터 생성기
 # ==========================================
 def get_fallback_festival():
-    # 유형별(당일치기형, 체류형, 외부유입 낮음) 분포를 사분면과 격자에 매핑하기 위해 보정한 가상 데이터
     return pd.DataFrame({
         "축제명": ["춘천닭갈비축제", "강경젓갈축제", "지평선축제", "머드축제"],
         "현지인방문자 유입": [32.4, 45.1, 28.7, 15.3],
@@ -532,9 +533,10 @@ def render_page2():
     reg_col_vac = detect_region_col(df_vac)
     reg_col_rent = detect_region_col(df_rent)
     
-    # 원본 상권명 전체를 유지하기 위해 칼럼명 변경 및 가공
-    df_vac_calc = df_vac.rename(columns={reg_col_vac: "상권명"})
-    df_rent_calc = df_rent.rename(columns={reg_col_rent: "임대상권명"})
+    # [오류 해결 핵심 2]: 다대다 병합 및 리인덱싱 에러 방지를 위해,
+    # 행 변경 전에 인덱스를 완벽하게 고유화하고 상권명 전체를 유지하는 가공 진행
+    df_vac_calc = df_vac.reset_index(drop=True).rename(columns={reg_col_vac: "상권명"})
+    df_rent_calc = df_rent.reset_index(drop=True).rename(columns={reg_col_rent: "임대상권명"})
     
     # 1) 공실률 변화량 연산 (2024 데이터 한정 및 소수 셋째자리 버림)
     vac_first = pd.to_numeric(df_vac_calc[first_q], errors='coerce').fillna(0.0)
@@ -552,15 +554,17 @@ def render_page2():
     df_rent_calc["임대료변화율"] = truncate_series(df_rent_calc["임대료변화율"])
     df_rent_calc["매칭키"] = df_rent_calc["임대상권명"].apply(normalize_region_name)
     
-    # 3) 상권 데이터 상권명 전체를 포함하여 통합
+    # 3) 상권 데이터 상권명 전체를 포함하여 통합 (1:1 상권 매핑)
     df_prop = pd.merge(
         df_vac_calc[["상권명", "공실률변화량", "매칭키"]], 
-        df_rent_calc[["임대상권명", "임대료변화율", "매칭키"]], 
-        on="매칭키", 
+        df_rent_calc[["임대상권명", "임대료변화율"]], 
+        left_on="상권명",
+        right_on="임대상권명",
         how="inner"
     )
     
     # 4) 축제 규모(외부방문자 유입) 연동
+    # [오류 해결 핵심 3]: 조인 시 다대다 무한 열 생성을 막기 위해, 매칭키 기준 1개 고유값으로 밀집(Grouping)
     fest_reg = detect_region_col(df_fest)
     foreign_col = find_col(df_fest.columns, ["외부방문자 유입", "외부방문자"]) or detect_numeric_col(df_fest)
     
@@ -568,13 +572,11 @@ def render_page2():
     df_fest_clean[foreign_col] = pd.to_numeric(df_fest_clean[foreign_col], errors='coerce').fillna(0)
     
     df_f_sub = df_fest_clean[[fest_reg, foreign_col]].copy()
-    df_f_sub.columns = ["_temp_reg", "_temp_foreign"]
-    df_fest_group = df_f_sub.groupby("_temp_reg")["_temp_foreign"].mean().reset_index()
+    df_f_sub.columns = ["지자체명", "외부방문자유입"]
+    df_f_sub["매칭키"] = df_f_sub["지자체명"].apply(normalize_region_name)
+    df_fest_group = df_f_sub.groupby("매칭키")["외부방문자유입"].mean().reset_index()
     
-    df_fest_group.columns = ["지자체명", "외부방문자유입"]
-    df_fest_group["매칭키"] = df_fest_group["지자체명"].apply(normalize_region_name)
-    
-    # 5) 지자체 총 예산액 연동
+    # 5) 지자체 총 예산액 연동 및 그룹 고유화
     cost_org = find_col(df_cost.columns, ["자치단체", "지자체"]) or df_cost.columns[0]
     cost_val = find_col(df_cost.columns, ["총비용"]) or df_cost.select_dtypes(include=['number']).columns[-1]
     
@@ -582,21 +584,19 @@ def render_page2():
     df_cost_clean[cost_val] = pd.to_numeric(df_cost_clean[cost_val], errors='coerce').fillna(0)
     
     df_c_sub = df_cost_clean[[cost_org, cost_val]].copy()
-    df_c_sub.columns = ["_temp_org", "_temp_cost"]
-    df_cost_group = df_c_sub.groupby("_temp_org")["_temp_cost"].sum().reset_index()
+    df_c_sub.columns = ["예산지자체", "예산총액(원)"]
+    df_c_sub["매칭키"] = df_c_sub["예산지자체"].apply(normalize_region_name)
+    df_cost_group = df_c_sub.groupby("매칭키")["예산총액(원)"].sum().reset_index()
     
-    df_cost_group.columns = ["예산지자체", "예산총액(원)"]
-    df_cost_group["매칭키"] = df_cost_group["예산지자체"].apply(normalize_region_name)
-    
-    # 6) 종합 조인 (실험군 vs 대조군 레이블 수립)
+    # 6) 종합 조인 (실험군 vs 대조군 레이블 수립) - 고유화된 그룹 테이블과 안정적 매칭
     df_relation = pd.merge(df_prop, df_fest_group, on="매칭키", how="left")
     df_relation = pd.merge(df_relation, df_cost_group, on="매칭키", how="left")
     
     df_relation["외부방문자유입"] = df_relation["외부방문자유입"].fillna(0)
     df_relation["예산총액(원)"] = df_relation["예산총액(원)"].fillna(1e6)
     
-    df_relation["상권구분"] = df_relation["지자체명"].apply(
-        lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)"
+    df_relation["상권구분"] = df_relation["외부방문자유입"].apply(
+        lambda x: "축제 상권 (실험군)" if x > 0 else "일반 상권 (대조군)"
     )
     
     # 외부방문자 유입률에 100을 가중한 크기 보정식 적용 (sizeref 보완으로 버블 크기 자동 스케일링 확보)
@@ -678,11 +678,11 @@ def render_page2():
     m_vac_full["매칭키"] = m_vac_full[r_v_col].apply(normalize_region_name)
     m_rent_full["매칭키"] = m_rent_full[r_r_col].apply(normalize_region_name)
     
-    m_vac_full = pd.merge(m_vac_full, df_fest_group[["매칭키", "지자체명"]], on="매칭키", how="left")
-    m_vac_full["상권구분"] = m_vac_full["지자체명"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)")
+    m_vac_full = pd.merge(m_vac_full, df_fest_group, on="매칭키", how="left")
+    m_vac_full["상권구분"] = m_vac_full["외부방문자유입"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) and x > 0 else "일반 상권 (대조군)")
     
-    m_rent_full = pd.merge(m_rent_full, df_fest_group[["매칭키", "지자체명"]], on="매칭키", how="left")
-    m_rent_full["상권구분"] = m_rent_full["지자체명"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) else "일반 상권 (대조군)")
+    m_rent_full = pd.merge(m_rent_full, df_fest_group, on="매칭키", how="left")
+    m_rent_full["상권구분"] = m_rent_full["외부방문자유입"].apply(lambda x: "축제 상권 (실험군)" if pd.notna(x) and x > 0 else "일반 상권 (대조군)")
     
     m_vac_full["공실률"] = pd.to_numeric(m_vac_full["공실률"], errors='coerce').fillna(0)
     m_rent_full["임대료"] = pd.to_numeric(m_rent_full["임대료"], errors='coerce').fillna(0)
@@ -804,9 +804,11 @@ def render_page3():
     
     df_f_map = df_fest_clean[[fest_reg, foreign_col]].copy()
     df_f_map.columns = ["지자체명", "외부방문자"]
-    df_f_map["매칭키"] = df_f_map["지자체명"].apply(lambda x: str(x)[:2] if pd.notna(x) else "")
+    df_f_map["매칭키"] = df_f_map["지자체명"].apply(normalize_region_name)
     
-    df_roi = pd.merge(df_sub, df_f_map, on="매칭키", how="left")
+    df_f_map_unique = df_f_map.groupby("매칭키")["외부방문자"].mean().reset_index()
+    
+    df_roi = pd.merge(df_sub, df_f_map_unique, on="매칭키", how="left")
     df_roi["외부방문자"] = df_roi["외부방문자"].fillna(0)
     
     # 효율성 지수 산출: (외부방문자 규모 / (순원가 / 10,000,000))
