@@ -600,7 +600,7 @@ def render_page1():
             st.write("분석 필수 항목(관광소비, 외부인 유입, 축제지 집중률) 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
             st.dataframe(df_fest.head())
 
-    # 축제 유형 분석용 인사이트 전용 박스 배치 (공백 보존) [1]
+    # 축제 유형 분석용 인사이트 전용 박스 배치 (오타 해결 및 파라미터 보완) [1]
     with row1_col_insight:
         st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
         st.subheader("💡 분석 인사이트")
@@ -651,7 +651,7 @@ def render_page1():
         )
         st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
-    # 연도별 업종 소비 흐름용 인사이트 전용 박스 배치 (공백 보존) [1]
+    # 연도별 업종 소비 흐름용 인사이트 전용 박스 배치 (오타 해결 및 파라미터 보완) [1]
     with row2_col_insight:
         st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
         st.subheader("💡 분석 인사이트")
