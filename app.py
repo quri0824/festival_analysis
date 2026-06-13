@@ -600,7 +600,7 @@ def render_page1():
             st.write("분석 필수 항목(관광소비, 외부인 유입, 축제지 집중률) 검색에 실패하였습니다. 원본 데이터프레임을 직접 출력합니다.")
             st.dataframe(df_fest.head())
 
-    # 축제 유형 분석용 인사이트 전용 박스 배치 (오타 해결 및 파라미터 보완) [1]
+    # 축제 유형 분석용 인사이트 전용 박스 배치 (공백 보완) [1]
     with row1_col_insight:
         st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
         st.subheader("💡 분석 인사이트")
@@ -651,7 +651,7 @@ def render_page1():
         )
         st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
 
-    # 연도별 업종 소비 흐름용 인사이트 전용 박스 배치 (오타 해결 및 파라미터 보완) [1]
+    # 연도별 업종 소비 흐름용 인사이트 전용 박스 배치 (공백 보존) [1]
     with row2_col_insight:
         st.markdown("<br><br>", unsafe_allow_html=True) # 차트 헤더와 정렬 정돈 목적의 마진 [1]
         st.subheader("💡 분석 인사이트")
@@ -883,8 +883,8 @@ def render_page2():
     
     st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix")
     
-    # [추가] 차트 1번 바로 아래 분석 인사이트 영역 [1]
-    st.info("💡 **차트 1 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
+    # [수정] 차트 1번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
+    st.info("💡 **차트 1 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
     st.markdown("---")
 
     # ------------------------------------------
@@ -918,8 +918,8 @@ def render_page2():
     fig2.update_layout(margin=dict(l=0, r=0, b=0, t=40))
     st.plotly_chart(fig2, use_container_width=True, key="p2_3d_bubble")
 
-    # [추가] 차트 2번 바로 아래 분석 인사이트 영역 [1]
-    st.info("💡 **차트 2 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
+    # [수정] 차트 2번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
+    st.info("💡 **차트 2 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
     st.markdown("---")
 
     # ------------------------------------------
@@ -985,8 +985,8 @@ def render_page2():
         )
         st.plotly_chart(fig_v_trend, use_container_width=True)
 
-    # [추가] 차트 3번 바로 아래 분석 인사이트 영역 [1]
-    st.info("💡 **차트 3 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
+    # [수정] 차트 3번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
+    st.info("💡 **차트 3 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
     st.markdown("---")
 
     # ------------------------------------------
@@ -1044,8 +1044,8 @@ def render_page2():
     fig4.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig4, use_container_width=True, key="p2_survey_bar_chart")
 
-    # [추가] 차트 4번 바로 아래 분석 인사이트 영역 [1]
-    st.info("💡 **차트 4 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
+    # [수정] 차트 4번 바로 아래 분석 인사이트 영역 (자동인용 문장 종단 가공 제거) [1]
+    st.info("💡 **차트 4 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*")
     st.markdown("---")
     
     st.markdown("""
