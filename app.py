@@ -883,6 +883,10 @@ def render_page2():
     
     st.plotly_chart(fig1, use_container_width=True, key="p2_quadrant_matrix")
     
+    # [추가] 차트 1번 바로 아래 분석 인사이트 영역 [1]
+    st.info("💡 **차트 1 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
+    st.markdown("---")
+
     # ------------------------------------------
     # 차트 2번: 3차원 버블 차트 (예산 규모 통제 분석)
     # ------------------------------------------
@@ -913,6 +917,10 @@ def render_page2():
     
     fig2.update_layout(margin=dict(l=0, r=0, b=0, t=40))
     st.plotly_chart(fig2, use_container_width=True, key="p2_3d_bubble")
+
+    # [추가] 차트 2번 바로 아래 분석 인사이트 영역 [1]
+    st.info("💡 **차트 2 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
+    st.markdown("---")
 
     # ------------------------------------------
     # 차트 3번: 시계열 실시간 동향 비교 (꺾은선)
@@ -977,6 +985,10 @@ def render_page2():
         )
         st.plotly_chart(fig_v_trend, use_container_width=True)
 
+    # [추가] 차트 3번 바로 아래 분석 인사이트 영역 [1]
+    st.info("💡 **차트 3 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
+    st.markdown("---")
+
     # ------------------------------------------
     # 차트 4번: 지방소멸 위기 의식 및 지자체 준비 수준 (설문 조사 기반 가로막대 차트)
     # ------------------------------------------
@@ -1032,7 +1044,10 @@ def render_page2():
     fig4.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig4, use_container_width=True, key="p2_survey_bar_chart")
 
+    # [추가] 차트 4번 바로 아래 분석 인사이트 영역 [1]
+    st.info("💡 **차트 4 분석 인사이트**\n\n*(이곳에 추후 분석 인사이트 내용을 작성할 예정입니다)*") [1]
     st.markdown("---")
+    
     st.markdown("""
     **📋 상권 분석 요약**
     * **시계열 추적**: 차트 3의 추이를 통하여, 축제 활성화 구역과 일반 통제 구역 사이에서 시간에 따라 나타나는 상권 변동의 편차를 통계적으로 모니터링할 수 있습니다.
