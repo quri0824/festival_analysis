@@ -65,41 +65,29 @@ def find_matching_csv(target_name):
 
 # 헬퍼 함수: 안전한 데이터 로딩 (DB -> CSV -> Fallback 순차 탐색)
 def load_table_safely(table_name, fallback_data_func):
-    df = None
-    is_mock = True
-    
     # 1. SQLite 데이터베이스 탐색
     matched_table = find_matching_table(table_name)
     if matched_table:
         conn = sqlite3.connect(DB_FILE)
         try:
             df = pd.read_sql_query(f"SELECT * FROM `{matched_table}`", conn)
-            is_mock = False
+            return df, False
         except Exception:
             pass
         finally:
             conn.close()
             
     # 2. 로컬 CSV 파일 탐색
-    if df is None:
-        matched_csv = find_matching_csv(table_name)
-        if matched_csv:
-            try:
-                df = pd.read_csv(matched_csv, encoding='utf-8-sig')
-                is_mock = False
-            except Exception:
-                pass
-                
+    matched_csv = find_matching_csv(table_name)
+    if matched_csv:
+        try:
+            df = pd.read_csv(matched_csv, encoding='utf-8-sig')
+            return df, False
+        except Exception:
+            pass
+            
     # 3. 실패 시 Fallback 임시 데이터 반환
-    if df is None:
-        df = fallback_data_func()
-        is_mock = True
-        
-    # 컬럼 인덱스의 BOM 문자(\ufeff) 및 앞뒤 공백 정밀 클리닝 공통 처리
-    if df is not None:
-        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        
-    return df, is_mock
+    return fallback_data_func(), True
 
 
 # 헬퍼 함수: 컬럼명 매칭
@@ -229,7 +217,7 @@ def get_region_from_festival(name, df_cost=None):
     return None
 
 
-def normalize_festival_data(df, df_cost=None, selected_year=None):
+def normalize_festival_data(df, df_cost=None):
     # CSV의 롱 포맷 식별용 주요 컬럼 확인
     gubun_col = find_col(df.columns, ["구분명", "구분"])
     val_col = find_col(df.columns, ["지표값", "값", "실적"])
@@ -237,18 +225,6 @@ def normalize_festival_data(df, df_cost=None, selected_year=None):
     
     if gubun_col and val_col and name_col:
         try:
-            # 개최년도(연도) 필터 적용
-            year_col = find_col(df.columns, ["개최년도", "연도", "년도", "개최년"])
-            if year_col:
-                df[year_col] = pd.to_numeric(df[year_col], errors='coerce')
-                if selected_year is not None:
-                    df = df[df[year_col] == selected_year].copy()
-                else:
-                    # 년도가 명시되지 않은 경우, 데이터의 혼입을 예방하고자 최신 연도 자동 고정
-                    latest_year = df[year_col].max()
-                    if pd.notna(latest_year):
-                        df = df[df[year_col] == latest_year].copy()
-
             # 실적 평가는 '축제기간'을 기준으로 통일하여 분석 편차 제거
             group_col = find_col(df.columns, ["그룹명", "그룹"])
             if group_col:
@@ -291,15 +267,14 @@ def normalize_festival_data(df, df_cost=None, selected_year=None):
 # Fallback 시뮬레이션용 예비 데이터 생성기
 # ==========================================
 def get_fallback_festival():
-    # 다년도(2024, 2023) 및 유형별 격차가 존재하도록 정합성을 보완한 모의 데이터
+    # 유형별(당일치기형, 체류형, 외부유입 낮음) 분포를 사분면과 격자에 매핑하기 위해 보정한 가상 데이터
     return pd.DataFrame({
-        "축제명": ["춘천닭갈비축제", "강경젓갈축제", "지평선축제", "머드축제", "춘천닭갈비축제", "강경젓갈축제", "지평선축제", "머드축제"],
-        "개최년도": [2024, 2024, 2024, 2024, 2023, 2023, 2023, 2023],
-        "현지인방문자 유입": [32.4, 45.1, 28.7, 15.3, 30.1, 42.0, 26.5, 12.8],
-        "외부방문자 유입": [82.6, 51.9, 75.3, 84.7, 80.2, 49.5, 71.1, 82.0],
-        "관광소비": [35.2, 78.9, 42.4, 75.1, 33.1, 75.0, 40.2, 72.5],
-        "축제지 집중률": [75.4, 58.2, 91.3, 84.5, 72.1, 55.0, 89.0, 81.2],
-        "지자체": ["강원", "충남", "전북", "충남", "강원", "충남", "전북", "충남"]
+        "축제명": ["춘천닭갈비축제", "강경젓갈축제", "지평선축제", "머드축제"],
+        "현지인방문자 유입": [32.4, 45.1, 28.7, 15.3],
+        "외부방문자 유입": [82.6, 51.9, 75.3, 84.7],
+        "관광소비": [35.2, 78.9, 42.4, 75.1],
+        "축제지 집중률": [75.4, 58.2, 91.3, 84.5],
+        "지자체": ["강원", "충남", "전북", "충남"]
     })
 
 def get_fallback_consume():
@@ -346,29 +321,18 @@ def render_page1():
     st.title("🎪 지역 축제 현황 및 시계열 소비 패턴")
     st.markdown("축제 지표 데이터 구조를 동적으로 정제하여 시계열 동향을 보다 명확하게 파악합니다.")
     
-    df_fest_raw, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
+    df_fest, is_f_mock = load_table_safely("문화관광축제주요지표", get_fallback_festival)
+    df_fest = normalize_festival_data(df_fest)
     df_consume, is_c_mock = load_table_safely("업종별소비액", get_fallback_consume)
     
     if is_f_mock or is_c_mock:
         st.sidebar.warning("⚠️ 일부 원본 데이터 누락으로 예비 시뮬레이션 데이터를 함께 활용 중입니다.")
         
-    # 개최년도(Year) 필터 구성 (중복 연합에 의한 왜곡 방지)
-    year_col = find_col(df_fest_raw.columns, ["개최년도", "연도", "년도", "개최년"])
-    selected_year = None
-    if year_col:
-        df_fest_raw[year_col] = pd.to_numeric(df_fest_raw[year_col], errors='coerce')
-        years = sorted([int(y) for y in df_fest_raw[year_col].dropna().unique() if y > 0], reverse=True)
-        if years:
-            selected_year = st.selectbox("📅 분석 대상 개최년도를 선택하세요", years, index=0, key="p1_year_select")
-            
-    # 지정 연도로 정규화 가공 수행
-    df_fest = normalize_festival_data(df_fest_raw, selected_year=selected_year)
-    
     col1, col2 = st.columns(2)
     
-    # 1) 축제별 관광소비 및 외부인 유입 수준 4사분면 버블 차트 (col1)
+    # 1) 축제별 외부방문자 유입 및 관광소비 사분면 버블 차트 (col1)
     with col1:
-        st.subheader("📍 축제 유형 분석 (관광소비 × 외부인 유입)")
+        st.subheader("📍 축제 유형 분석 (외부방문자 유입률 × 관광소비)")
         name_col = find_col(
             df_fest.columns, 
             ["축제명", "행사명", "축제", "이름"]
@@ -383,20 +347,20 @@ def render_page1():
             df_fest[consume_col] = pd.to_numeric(df_fest[consume_col], errors='coerce').fillna(0)
             df_fest[focus_col] = pd.to_numeric(df_fest[focus_col], errors='coerce').fillna(0)
             
-            # 중앙값 계산 (데이터 유무에 따라 방어 코드 구성)
-            x_median = df_fest[consume_col].median() if len(df_fest) > 0 else 0
-            y_median = df_fest[foreign_col].median() if len(df_fest) > 0 else 0
+            # 중앙값 연산 (데이터 결여 시 0)
+            x_median = df_fest[foreign_col].median() if len(df_fest) > 0 else 0
+            y_median = df_fest[consume_col].median() if len(df_fest) > 0 else 0
             
             if pd.isna(x_median): x_median = 0
             if pd.isna(y_median): y_median = 0
             
-            # 사분면 분류 알고리즘 구축
+            # 사분면 분류 알고리즘 (X: 외부유입률, Y: 관광소비)
             def classify_quadrant(row):
-                y_val = row[foreign_col]
-                x_val = row[consume_col]
-                if y_val >= y_median and x_val < x_median:
+                x_val = row[foreign_col]
+                y_val = row[consume_col]
+                if x_val >= x_median and y_val < y_median:
                     return "당일치기형"
-                elif y_val >= y_median and x_val >= x_median:
+                elif x_val >= x_median and y_val >= y_median:
                     return "체류형"
                 else:
                     return "외부유입 낮음"
@@ -408,8 +372,8 @@ def render_page1():
             
             fig1 = px.scatter(
                 df_fest,
-                x=consume_col,
-                y=foreign_col,
+                x=foreign_col,
+                y=consume_col,
                 size="_bubble_size",
                 color="유형",
                 color_discrete_map={
@@ -419,17 +383,19 @@ def render_page1():
                 },
                 hover_name=name_col,
                 text=name_col,
-                title=f"{selected_year}년 축제별 관광소비 및 외부인 유입 (중앙값 분할 사분면)",
+                title="축제별 외부방문자 유입 및 관광소비 수준 (중앙값 기준 사분면)",
                 labels={
+                    foreign_col: "외부방문자 유입률",
                     consume_col: "관광소비 지수",
-                    foreign_col: "외부인 방문자 유입 (%)",
                     "_bubble_size": "축제지 집중률 (%)",
                     "유형": "축제 유형"
                 },
+                range_x=[0, 100],
+                range_y=[0, 100],
                 template="plotly_white"
             )
             
-            # 중앙값 구분선(Dashed Line) 추가
+            # 중앙값 구분 기준선(Dashed Line) 추가
             fig1.add_vline(x=x_median, line_dash="dash", line_color="gray", annotation_text="X 중앙값", annotation_position="top left")
             fig1.add_hline(y=y_median, line_dash="dash", line_color="gray", annotation_text="Y 중앙값", annotation_position="bottom right")
             
@@ -442,12 +408,12 @@ def render_page1():
     # 2) 시계열 꺾은선 소비 차트 (col2)
     with col2:
         st.subheader("📈 연도별 업종 소비 흐름 (꺾은선)")
-        year_col_cons = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0]
+        year_col = find_col(df_consume.columns, ["연도", "년도", "시기"]) or df_consume.columns[0]
         
-        other_cols = [c for c in df_consume.columns if c != year_col_cons]
+        other_cols = [c for c in df_consume.columns if c != year_col]
         
         df_melted_consume = df_consume.melt(
-            id_vars=[year_col_cons],
+            id_vars=[year_col],
             value_vars=other_cols,
             var_name="소비업종",
             value_name="소비액"
@@ -461,19 +427,19 @@ def render_page1():
             
         df_melted_consume["소비액"] = pd.to_numeric(df_melted_consume["소비액"], errors='coerce').fillna(0)
         
-        df_sub = df_melted_consume[[year_col_cons, "소비업종", "소비액"]].copy()
+        df_sub = df_melted_consume[[year_col, "소비업종", "소비액"]].copy()
         df_sub.columns = ["_temp_year", "_temp_sector", "_temp_amount"]
         df_trend = df_sub.groupby(["_temp_year", "_temp_sector"])["_temp_amount"].sum().reset_index()
-        df_trend.columns = [year_col_cons, "소비업종", "소비액"]
+        df_trend.columns = [year_col, "소비업종", "소비액"]
         
         fig2 = px.line(
             df_trend,
-            x=year_col_cons,
+            x=year_col,
             y="소비액",
             color="소비업종",
             markers=True,
             title="연도별 업종 총 소비액 변동 추이",
-            labels={year_col_cons: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"},
+            labels={year_col: "연도", "소비액": "소비액(단위: 천원)", "소비업종": "업종구분"},
             template="plotly_white"
         )
         st.plotly_chart(fig2, use_container_width=True, key="p1_consume_trend_line_safe")
