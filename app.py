@@ -518,7 +518,7 @@ def render_page1():
     with row0_col_insight:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.subheader("💡 분석 인사이트")
-        st.info("체감 BSI는 코로나 이후 반등 구간(2022년 4~5월, 약 76)을 제외하면 줄곧 50~65대에 갇혀 있습니다. 전망 BSI와의 격차는 평균 약 20p 이상 벌어진 채로 고착화됩니다.")
+        st.info("체감 BSI는 코로나 이후 반등 구간(2022년 4-5월, 약 76)을 제외하면 줄곧 50-65대에 갇혀 있습니다. 전망 BSI와의 격차는 평균 약 20p 이상 벌어진 채로 고착화됩니다.")
 
     st.markdown("---")
 
